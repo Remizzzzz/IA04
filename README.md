@@ -2,7 +2,7 @@
 
 ## Descriptif
 
-Deux équipes de 7 unités s'affrontent sur une carte 2D en grille comportant des obstacles qui bloquent les déplacements et les tirs. Chaque équipe compte 5 soldats (rapides, portée moyenne), 1 tank (lent, résistant, dégâts élevés) et 1 camion (sans arme, ravitaille en munitions les alliés proches).
+Deux équipes de X unités s'affrontent sur une carte 2D en grille comportant des obstacles qui bloquent les déplacements et les tirs. Chaque équipe compte X soldats (rapides, portée moyenne), Y tanks (lent, résistant, dégâts élevés) et Z camions (sans arme, ravitaille en munitions les alliés proches).
 
 Chaque unité est un agent autonome exécuté dans sa propre **goroutine** : à chaque tick, elle reçoit sa perception locale (ennemis et alliés visibles, obstacles, messages), choisit une action (se déplacer, tirer, ravitailler, attendre) et l'envoie par **channel** à un contrôleur central. Celui-ci attend toutes les actions, résout les conflits dans un ordre déterministe et met à jour le monde, ce qui garantit des simulations reproductibles.
 
