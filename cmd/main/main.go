@@ -5,8 +5,8 @@ import (
 )
 
 func main() {
-	sizeOfMap := 10
-	numberOfEntity := 2
-	obstacleFrequency := 30
+	sizeOfMap := 10         // grid is sizeOfMap x sizeOfMap tiles
+	numberOfEntity := 5     // number of units spawned in the world
+	obstacleFrequency := 30 // percentage chance for a tile to be an obstacle
 	sim.SimulateRandomWorld(sizeOfMap, numberOfEntity, obstacleFrequency)
 }
