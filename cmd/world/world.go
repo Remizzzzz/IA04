@@ -35,7 +35,7 @@ func RandCase(probabilitY int) Tile {
 
 // World holds the grid and every unit in it. World is the sole owner of
 // spatial logic (movement, reachability, line of sight): units never touch
-// the grid directly, they only receive Orders and reply with Moves (see
+// the grid directly, they only receive Orders and reply with Actions (see
 // Turn), which is what lets World hold *agents.Unit references without
 // agents importing world back.
 type World struct {
@@ -44,6 +44,7 @@ type World struct {
 	Printable map[Tile]string // text representation of each Tile, used by PrintWorld
 	FreeTiles []geometry.Pos  // tiles that were free at world creation time (used to spawn units)
 	Units     []*agents.Unit  // every unit currently in the world
+	Armies    []*agents.Army  // every army formed so far, one per distinct allegiance seen
 }
 
 // NewWorld creates an N x N grid where each tile is randomly an obstacle with
@@ -77,16 +78,55 @@ func (w *World) GetTile(pos geometry.Pos) Tile {
 	return w.Grid[pos.X][pos.Y]
 }
 
-// PrintWorld renders the grid to stdout using the Printable representation.
+// GetUnitAt returns the unit occupying pos, or nil if there isn't one. This
+// is an O(n) scan over Units - fine for the small simulations this runs at,
+// but worth revisiting if the unit count grows large.
+func (w *World) GetUnitAt(pos geometry.Pos) *agents.Unit {
+	for _, u := range w.Units {
+		if u.Position == pos {
+			return u
+		}
+	}
+	return nil
+}
+
+// unitColors is the palette PrintWorld cycles through for occupied tiles, by
+// the order each army first appeared in Armies (wrapping if there are more
+// armies than colors). ANSI SGR codes: 31/32/34/35/36 = red/green/blue/
+// magenta/cyan.
+var unitColors = []string{"\033[31m", "\033[32m", "\033[34m", "\033[35m", "\033[36m"}
+
+const colorReset = "\033[0m"
+
+// PrintWorld renders the grid to stdout using the Printable representation,
+// coloring each occupied tile by the army of the unit standing on it.
 func (w *World) PrintWorld() {
 	for i := range w.Grid {
 		for j := range w.Grid[i] {
-			to_print := w.Printable[w.GetTile(geometry.Pos{X: i, Y: j})]
-			fmt.Print(to_print)
+			pos := geometry.Pos{X: i, Y: j}
+			tile := w.GetTile(pos)
+			toPrint := w.Printable[tile]
+			if tile == occupied {
+				if u := w.GetUnitAt(pos); u != nil && u.Army != nil {
+					toPrint = w.colorFor(u.Army) + toPrint + colorReset
+				}
+			}
+			fmt.Print(toPrint)
 			fmt.Printf(" ")
 		}
 		fmt.Printf("\n")
 	}
+}
+
+// colorFor returns the ANSI color code for army, picked from unitColors by
+// the order army first appeared in Armies.
+func (w *World) colorFor(army *agents.Army) string {
+	for i, a := range w.Armies {
+		if a == army {
+			return unitColors[i%len(unitColors)]
+		}
+	}
+	return ""
 }
 
 // GetNeighbours returns the up to 8 tiles surrounding pos (within grid bounds).
@@ -120,10 +160,10 @@ func (w *World) GetRandomFreePos() geometry.Pos {
 	return w.FreeTiles[utils.RandInt(0, len(w.FreeTiles))]
 }
 
-// SpawnUnit creates a unit with the given strategy, places it on a random
-// free tile, registers it with the world and starts its goroutine.
+// SpawnUnit creates a solo unit with the given strategy, places it on a
+// random free tile, registers it with the world and starts its goroutine.
 func (w *World) SpawnUnit(strategy agents.Strategy) *agents.Unit {
-	return w.spawn(strategy, w.GetRandomFreePos())
+	return w.spawn(agents.NewUnitDefault(strategy), w.GetRandomFreePos())
 }
 
 // SpawnUnitAt is like SpawnUnit but places the unit at a specific tile,
@@ -132,16 +172,48 @@ func (w *World) SpawnUnitAt(strategy agents.Strategy, p geometry.Pos) *agents.Un
 	if !w.IsFree(p) {
 		panic(fmt.Sprintf("cannot spawn unit at position (%d, %d): tile is not free", p.X, p.Y))
 	}
-	return w.spawn(strategy, p)
+	return w.spawn(agents.NewUnitDefault(strategy), p)
 }
 
-func (w *World) spawn(strategy agents.Strategy, p geometry.Pos) *agents.Unit {
-	u := agents.NewUnit(strategy)
+// SpawnAllied creates a unit with the given strategy and allegiance, places
+// it on a random free tile, and enlists it into the Army for that
+// allegiance (forming one if this is the first unit to carry it).
+func (w *World) SpawnAllied(strategy agents.Strategy, allegiance int) *agents.Unit {
+	return w.spawn(agents.NewUnit(strategy, allegiance), w.GetRandomFreePos())
+}
+
+// SpawnAlliedAt is like SpawnAllied but places the unit at a specific tile,
+// panicking if that tile isn't free.
+func (w *World) SpawnAlliedAt(strategy agents.Strategy, allegiance int, p geometry.Pos) *agents.Unit {
+	if !w.IsFree(p) {
+		panic(fmt.Sprintf("cannot spawn unit at position (%d, %d): tile is not free", p.X, p.Y))
+	}
+	return w.spawn(agents.NewUnit(strategy, allegiance), p)
+}
+
+func (w *World) spawn(u *agents.Unit, p geometry.Pos) *agents.Unit {
 	u.Position = p
 	w.SetTile(p, occupied)
 	w.Units = append(w.Units, u)
+	w.enlist(u)
 	u.Simulate()
 	return u
+}
+
+// enlist finds the Army matching u's allegiance, or forms a new one with u
+// as general if none exists yet, and wires u.Army so the unit's own strategy
+// can consult it directly.
+func (w *World) enlist(u *agents.Unit) {
+	for _, army := range w.Armies {
+		if army.Allegiance == u.Allegiance {
+			army.Soldiers = append(army.Soldiers, u)
+			u.Army = army
+			return
+		}
+	}
+	army := agents.NewArmy(u)
+	u.Army = army
+	w.Armies = append(w.Armies, army)
 }
 
 //region Test
@@ -304,22 +376,72 @@ func sign(n int) int {
 	}
 }
 
-// region Simulate
-
-// Turn runs one simulation step: every unit is sent this turn's vision and
-// reachable tiles and replies with where it wants to move; World then
-// applies every move. Units decide concurrently (each in its own goroutine,
-// started by Simulate), while the two sequential loops below keep every
-// Grid mutation serialized in World, avoiding data races on the shared grid.
-func (w *World) Turn() {
-	for _, u := range w.Units {
-		u.Orders <- agents.Order{
-			Vision:    w.GetVisibleTiles(u.Position, u.VisionRange),
-			Reachable: w.GetReachableTiles(u.Position, u.Speed),
-			Cmd:       "MOVE",
+// GetVisibleUnits returns every other unit currently visible to self, i.e.
+// whose position is among the tiles self sees. It hands back the units
+// themselves (not just their positions) so a strategy can read whatever
+// else a unit carries - allegiance today, a unit type later - without World
+// having to pick out fields on its behalf.
+func (w *World) GetVisibleUnits(self *agents.Unit, visible []geometry.Pos) []*agents.Unit {
+	visibleSet := make(map[geometry.Pos]bool, len(visible))
+	for _, p := range visible {
+		visibleSet[p] = true
+	}
+	targets := make([]*agents.Unit, 0)
+	for _, other := range w.Units {
+		if other == self {
+			continue
+		}
+		if visibleSet[other.Position] {
+			targets = append(targets, other)
 		}
 	}
+	return targets
+}
+
+// region Simulate
+
+// Turn runs one simulation step. It first lets every army update its shared
+// state (regroup/advance phase, and which soldier's sightings count as the
+// army spotting an enemy) - that happens here, sequentially, in this single
+// goroutine, before any unit starts deciding, so it's safe for every
+// soldier's concurrent decision to read that state afterwards without a
+// race. It then sends every unit this turn's vision, reachable tiles and
+// shootable targets, and resolves the Action it replies with. Units decide
+// concurrently (each in its own goroutine, started by Simulate), while the
+// final two sequential loops keep every Grid mutation serialized in World,
+// avoiding data races on the shared grid.
+func (w *World) Turn() {
+	for _, army := range w.Armies {
+		army.UpdatePhase()
+	}
+
+	orders := make(map[*agents.Unit]agents.Order, len(w.Units))
 	for _, u := range w.Units {
-		w.Move(u, <-u.Moves)
+		vision := w.GetVisibleTiles(u.Position, u.VisionRange)
+		targets := w.GetVisibleUnits(u, vision)
+		if u.Army != nil {
+			u.Army.Perceive(targets)
+		}
+		orders[u] = agents.Order{
+			Vision:    vision,
+			Reachable: w.GetReachableTiles(u.Position, u.Speed),
+			Targets:   targets,
+		}
+	}
+
+	for _, u := range w.Units {
+		u.Orders <- orders[u]
+	}
+	for _, u := range w.Units {
+		switch action := <-u.Actions; action.Kind {
+		case agents.Move:
+			w.Move(u, action.Target)
+		case agents.Shoot:
+			// Combat resolution (hit/miss, damage, HP) is a follow-up once
+			// units carry combat stats; the action is recognized but has no
+			// effect yet.
+		case agents.Stay:
+			// deliberately do nothing: the unit holds its position
+		}
 	}
 }

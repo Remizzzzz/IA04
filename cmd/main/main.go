@@ -6,7 +6,8 @@ import (
 
 func main() {
 	sizeOfMap := 10         // grid is sizeOfMap x sizeOfMap tiles
-	numberOfEntity := 5     // number of units spawned in the world
+	numberOfArmies := 2     // number of armies to spawn
+	soldiersPerArmy := 3    // number of soldiers (including the general) per army
 	obstacleFrequency := 30 // percentage chance for a tile to be an obstacle
-	sim.SimulateRandomWorld(sizeOfMap, numberOfEntity, obstacleFrequency)
+	sim.SimulateArmyWorld(sizeOfMap, numberOfArmies, soldiersPerArmy, obstacleFrequency)
 }

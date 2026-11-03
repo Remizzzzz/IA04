@@ -9,3 +9,17 @@ type Pos struct {
 	X int
 	Y int
 }
+
+// ManhattanDistance returns the grid distance between a and b (the number of
+// cardinal steps needed to go from one to the other).
+func ManhattanDistance(a, b Pos) int {
+	dx := a.X - b.X
+	if dx < 0 {
+		dx = -dx
+	}
+	dy := a.Y - b.Y
+	if dy < 0 {
+		dy = -dy
+	}
+	return dx + dy
+}
