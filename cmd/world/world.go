@@ -1,6 +1,7 @@
 package world
 
 import (
+	"container/heap"
 	"fmt"
 	"soldier/cmd/agents"
 	"soldier/cmd/geometry"
@@ -239,7 +240,7 @@ func (w *World) Move(u *agents.Unit, p geometry.Pos) {
 	if w.OutOfRange(p) || !w.IsFree(p) {
 		return
 	}
-	if !w.reachable(u.Position, p, u.Speed) {
+	if !w.reachable(u.Position, p, u.Speed, w.IsFree) {
 		return
 	}
 	w.SetTile(u.Position, free)
@@ -247,14 +248,23 @@ func (w *World) Move(u *agents.Unit, p geometry.Pos) {
 	w.SetTile(u.Position, occupied)
 }
 
-// GetReachableTiles returns every tile within speed steps of pos that can
-// actually be reached without crossing obstacles or occupied tiles.
-func (w *World) GetReachableTiles(pos geometry.Pos, speed int) []geometry.Pos {
+// GetReachableTiles returns every tile within speed steps of pos that a unit
+// standing there can see it could reach: the destination and every tile on
+// the way must be in visible and free right now, so a unit only commits to
+// moves through ground it's actually looking at. Anything it returns is
+// also really reachable, so Move's own check on the real grid accepts it.
+func (w *World) GetReachableTiles(pos geometry.Pos, speed int, visible []geometry.Pos) []geometry.Pos {
+	visibleSet := make(map[geometry.Pos]bool, len(visible))
+	for _, p := range visible {
+		visibleSet[p] = true
+	}
+	passable := func(p geometry.Pos) bool { return visibleSet[p] && w.IsFree(p) }
+
 	reachableTiles := make([]geometry.Pos, 0)
 	for i := pos.X - speed; i <= pos.X+speed; i++ {
 		for j := pos.Y - speed; j <= pos.Y+speed; j++ {
 			candidate := geometry.Pos{X: i, Y: j}
-			if w.reachable(pos, candidate, speed) {
+			if w.reachable(pos, candidate, speed, passable) {
 				reachableTiles = append(reachableTiles, candidate)
 			}
 		}
@@ -263,13 +273,13 @@ func (w *World) GetReachableTiles(pos geometry.Pos, speed int) []geometry.Pos {
 }
 
 // reachable reports whether target can be reached from pos within speed
-// steps, using a breadth-first search restricted to free tiles and moving
-// one step at a time along the four cardinal directions.
-func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int) bool {
+// steps, using a breadth-first search through tiles accepted by passable
+// and moving one step at a time along the four cardinal directions.
+func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int, passable func(geometry.Pos) bool) bool {
 	if target == pos {
 		return true
 	}
-	if speed <= 0 || w.OutOfRange(target) || !w.IsFree(target) {
+	if speed <= 0 || w.OutOfRange(target) || !passable(target) {
 		return false
 	}
 
@@ -290,7 +300,7 @@ func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int) bool
 
 		for _, direction := range directions {
 			next := geometry.Pos{X: current.pos.X + direction.X, Y: current.pos.Y + direction.Y}
-			if visited[next] || w.OutOfRange(next) || !w.IsFree(next) {
+			if visited[next] || w.OutOfRange(next) || !passable(next) {
 				continue
 			}
 			if next == target {
@@ -302,6 +312,120 @@ func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int) bool
 	}
 
 	return false
+}
+
+// region pathfinding
+
+// pathNode is one entry in the A* open set: a candidate tile, the cost to
+// reach it so far (g), and its estimated total cost to the goal (f = g +
+// heuristic).
+type pathNode struct {
+	pos geometry.Pos
+	g   int
+	f   int
+}
+
+// pathQueue is a min-heap of pathNode ordered by f, used as A*'s open set.
+type pathQueue []pathNode
+
+func (q pathQueue) Len() int            { return len(q) }
+func (q pathQueue) Less(i, j int) bool  { return q[i].f < q[j].f }
+func (q pathQueue) Swap(i, j int)       { q[i], q[j] = q[j], q[i] }
+func (q *pathQueue) Push(x interface{}) { *q = append(*q, x.(pathNode)) }
+func (q *pathQueue) Pop() interface{} {
+	old := *q
+	n := len(old)
+	node := old[n-1]
+	*q = old[:n-1]
+	return node
+}
+
+// knownPathLength returns the walking distance from `from` to `to` as far as
+// a unit can tell from its terrain memory: A* (Manhattan heuristic, which is
+// admissible and consistent on a uniform-cost grid, so the result is the
+// shortest route) restricted to tiles in known that are passable and not
+// blocked by a unit it currently sees. Tiles never seen are treated as
+// impassable - a unit won't plan a route through terrain it knows nothing
+// about. `to` itself is always a valid destination, seen or not, occupied
+// or not: this measures distance to a tile, not whether you could stand on it.
+//
+// When no known route reaches `to`, it falls back to exploring: the cost of
+// the best known route to a frontier tile (a known tile bordering unseen
+// terrain) plus that tile's straight-line distance to `to`, offset by a
+// penalty larger than any real route on the grid so a known route always
+// beats a guess. Walking to the frontier reveals more terrain, and the unit
+// replans next turn. Returns -1 only if `to` is unreachable and there's no
+// frontier left to explore either.
+func (w *World) knownPathLength(from, to geometry.Pos, known agents.KnownMap, blocked map[geometry.Pos]bool) int {
+	if from == to {
+		return 0
+	}
+	directions := [...]geometry.Pos{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}}
+
+	open := &pathQueue{{pos: from, g: 0, f: geometry.ManhattanDistance(from, to)}}
+	heap.Init(open)
+	best := map[geometry.Pos]int{from: 0}
+	bestFrontier := -1
+
+	for open.Len() > 0 {
+		current := heap.Pop(open).(pathNode)
+		if current.pos == to {
+			return current.g
+		}
+		if current.g > best[current.pos] {
+			continue // a cheaper path to this tile was already found
+		}
+
+		for _, d := range directions {
+			next := geometry.Pos{X: current.pos.X + d.X, Y: current.pos.Y + d.Y}
+			if w.OutOfRange(next) {
+				continue
+			}
+			if _, seen := known[next]; !seen && next != to {
+				// current borders unseen terrain: it's a frontier tile
+				if est := current.g + geometry.ManhattanDistance(current.pos, to); bestFrontier < 0 || est < bestFrontier {
+					bestFrontier = est
+				}
+				continue
+			}
+			if next != to && (!known[next] || blocked[next]) {
+				continue
+			}
+			g := current.g + 1
+			if existing, seen := best[next]; seen && existing <= g {
+				continue
+			}
+			best[next] = g
+			heap.Push(open, pathNode{pos: next, g: g, f: g + geometry.ManhattanDistance(next, to)})
+		}
+	}
+
+	if bestFrontier < 0 {
+		return -1
+	}
+	return w.Size*w.Size + bestFrontier
+}
+
+// observe updates u's terrain memory (and its army's, if it coordinates)
+// with every tile it currently sees.
+func (w *World) observe(u *agents.Unit, vision []geometry.Pos) {
+	for _, p := range vision {
+		u.Remember(p, w.GetTile(p) != obstacle)
+	}
+}
+
+// distanceFor builds u's DistanceFunc for this turn: pathfinding over the
+// terrain u plans with (see Unit.Knowledge), where only the units u
+// currently sees count as obstacles - it doesn't know where unseen units are.
+func (w *World) distanceFor(u *agents.Unit, vision []geometry.Pos) agents.DistanceFunc {
+	blocked := make(map[geometry.Pos]bool)
+	for _, p := range vision {
+		if p != u.Position && w.GetTile(p) == occupied {
+			blocked[p] = true
+		}
+	}
+	known := u.Knowledge()
+	return func(a, b geometry.Pos) int { return w.knownPathLength(a, b, known, blocked) }
 }
 
 // region vision
@@ -400,33 +524,43 @@ func (w *World) GetVisibleUnits(self *agents.Unit, visible []geometry.Pos) []*ag
 
 // region Simulate
 
-// Turn runs one simulation step. It first lets every army update its shared
-// state (regroup/advance phase, and which soldier's sightings count as the
-// army spotting an enemy) - that happens here, sequentially, in this single
-// goroutine, before any unit starts deciding, so it's safe for every
-// soldier's concurrent decision to read that state afterwards without a
-// race. It then sends every unit this turn's vision, reachable tiles and
-// shootable targets, and resolves the Action it replies with. Units decide
+// Turn runs one simulation step. It first updates every army's shared state
+// (phase, terrain memory, whether its target is in sight, where it heads
+// this turn) - that happens here, sequentially, in this single goroutine,
+// before any unit starts deciding, so it's safe for every soldier's
+// concurrent decision to read that state afterwards without a race. It then
+// sends every unit this turn's vision, reachable tiles and shootable
+// targets, and resolves the Action it replies with. Units decide
 // concurrently (each in its own goroutine, started by Simulate), while the
 // final two sequential loops keep every Grid mutation serialized in World,
 // avoiding data races on the shared grid.
 func (w *World) Turn() {
 	for _, army := range w.Armies {
+		army.BeginTurn()
 		army.UpdatePhase()
 	}
 
+	// Every memory write (observe, Perceive, ResolveGoal) happens before any
+	// unit decides. Each Distance closure only reads that memory lazily while
+	// its unit decides, so by then its army's shared map already holds every
+	// soldier's sightings from this turn, and nothing writes to it concurrently.
 	orders := make(map[*agents.Unit]agents.Order, len(w.Units))
 	for _, u := range w.Units {
 		vision := w.GetVisibleTiles(u.Position, u.VisionRange)
+		w.observe(u, vision)
 		targets := w.GetVisibleUnits(u, vision)
 		if u.Army != nil {
 			u.Army.Perceive(targets)
 		}
 		orders[u] = agents.Order{
 			Vision:    vision,
-			Reachable: w.GetReachableTiles(u.Position, u.Speed),
+			Reachable: w.GetReachableTiles(u.Position, u.Speed, vision),
 			Targets:   targets,
+			Distance:  w.distanceFor(u, vision),
 		}
+	}
+	for _, army := range w.Armies {
+		army.ResolveGoal(w.Size)
 	}
 
 	for _, u := range w.Units {

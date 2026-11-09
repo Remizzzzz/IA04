@@ -35,15 +35,30 @@ type Action struct {
 	Target geometry.Pos
 }
 
+// KnownMap is a memory of the terrain: every tile ever seen, mapped to
+// whether it's passable (not an obstacle). Tiles never seen are absent.
+type KnownMap map[geometry.Pos]bool
+
+// DistanceFunc returns the walking distance between two positions as far as
+// the unit can tell from its terrain memory (see World.knownPathLength for
+// the exact rules, including the exploration fallback when no known route
+// exists), or -1 if it has no way forward at all. World builds one per unit
+// each turn (see Order.Distance) since computing it needs the pathfinding
+// World owns; it's what lets a strategy route around obstacles and other
+// units instead of only comparing straight-line distance.
+type DistanceFunc func(a, b geometry.Pos) int
+
 // Order is what World sends a unit at the start of each turn: what tiles it
-// can currently see, which tiles it could move to, and which other units it
-// could shoot at. Bundling everything a unit needs for the turn into one
-// message (instead of separate channels) avoids having to coordinate the
-// order multiple sends and receives happen in.
+// can currently see, which tiles it could move to, which other units it
+// could shoot at, and a way to measure the real walking distance between any
+// two tiles. Bundling everything a unit needs for the turn into one message
+// (instead of separate channels) avoids having to coordinate the order
+// multiple sends and receives happen in.
 type Order struct {
 	Vision    []geometry.Pos
 	Reachable []geometry.Pos //Reachable tiles where the units can move (even if out of sight for now)
 	Targets   []*Unit        // other units currently visible, in shooting range - read-only: only World may mutate a Unit's fields
+	Distance  DistanceFunc
 }
 
 // Unit represents a single agent. It holds no reference to the world: World
@@ -57,6 +72,7 @@ type Unit struct {
 	Strategy    Strategy
 	VisionRange int
 	Vision      []geometry.Pos // tiles seen as of the last Order received
+	Known       KnownMap       // terrain this unit has seen itself, accumulated turn after turn
 	Allegiance  int            // units with the same allegiance recognize each other as allies
 	Army        *Army          // the army this unit belongs to, set by World on spawn
 	Alive       bool
@@ -73,11 +89,34 @@ func NewUnit(strategy Strategy, allegiance int) *Unit {
 		Speed:       1,
 		Strategy:    strategy,
 		VisionRange: 3,
+		Known:       make(KnownMap),
 		Allegiance:  allegiance,
 		Alive:       true,
 		Orders:      make(chan Order),
 		Actions:     make(chan Action),
 	}
+}
+
+// Remember records that tile p was seen and whether it's passable, in the
+// unit's own memory and, for a Coordinated unit, in its army's shared memory
+// too - pooled intel is part of what coordinating buys. World calls this
+// sequentially before any unit decides, so it never races with the reads
+// done while deciding.
+func (u *Unit) Remember(p geometry.Pos, passable bool) {
+	u.Known[p] = passable
+	if u.Strategy == Coordinated && u.Army != nil {
+		u.Army.Known[p] = passable
+		u.Army.lastSeen[p] = u.Army.clock
+	}
+}
+
+// Knowledge returns the terrain memory this unit plans its routes with: its
+// army's shared memory if it coordinates with one, its own otherwise.
+func (u *Unit) Knowledge() KnownMap {
+	if u.Strategy == Coordinated && u.Army != nil {
+		return u.Army.Known
+	}
+	return u.Known
 }
 
 // NewUnitDefault creates a solo unit with a guaranteed-unique allegiance, so
@@ -92,12 +131,12 @@ func NewUnitDefault(strategy Strategy) *Unit {
 
 // UseStrategy picks this turn's Action out of the reachable tiles and
 // targets carried by the last Order, according to the unit's Strategy.
-func (u *Unit) UseStrategy(reachable []geometry.Pos, targets []*Unit) Action {
+func (u *Unit) UseStrategy(reachable []geometry.Pos, targets []*Unit, distance DistanceFunc) Action {
 	switch u.Strategy {
 	case Random:
 		return u.strategyRandom(reachable)
 	case Coordinated:
-		return u.strategyCoordinated(reachable, targets)
+		return u.strategyCoordinated(reachable, targets, distance)
 	}
 	return Action{Kind: Stay}
 }
@@ -120,9 +159,9 @@ func (u *Unit) strategyRandom(reachable []geometry.Pos) Action {
 // strategyCoordinated asks the unit's Army what to do when it actually has
 // soldiers to coordinate and a living general to issue the plan; otherwise
 // it falls back to deciding on its own.
-func (u *Unit) strategyCoordinated(reachable []geometry.Pos, targets []*Unit) Action {
+func (u *Unit) strategyCoordinated(reachable []geometry.Pos, targets []*Unit, distance DistanceFunc) Action {
 	if u.Army != nil && u.Army.IsActive() && u.Army.General.Alive {
-		return u.Army.Decide(u, reachable, targets)
+		return u.Army.Decide(u, reachable, targets, distance)
 	}
 	return u.strategyRandom(reachable)
 }
@@ -137,7 +176,7 @@ func (u *Unit) Simulate() {
 	go func() {
 		for order := range u.Orders {
 			u.Vision = order.Vision
-			u.Actions <- u.UseStrategy(order.Reachable, order.Targets)
+			u.Actions <- u.UseStrategy(order.Reachable, order.Targets, order.Distance)
 		}
 	}()
 }
