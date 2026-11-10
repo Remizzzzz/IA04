@@ -91,6 +91,7 @@ func (w *World) GetUnitAt(pos geometry.Pos) *agents.Unit {
 	return nil
 }
 
+// Made by Claude : (idk the color code)
 // unitColors is the palette PrintWorld cycles through for occupied tiles, by
 // the order each army first appeared in Armies (wrapping if there are more
 // armies than colors). ANSI SGR codes: 31/32/34/35/36 = red/green/blue/
@@ -130,6 +131,7 @@ func (w *World) colorFor(army *agents.Army) string {
 	return ""
 }
 
+// Made by Claude :
 // GetNeighbours returns the up to 8 tiles surrounding pos (within grid bounds).
 func (w *World) GetNeighbours(pos geometry.Pos) []geometry.Pos {
 	neighbours := make([]geometry.Pos, 0)
@@ -272,6 +274,7 @@ func (w *World) GetReachableTiles(pos geometry.Pos, speed int, visible []geometr
 	return reachableTiles
 }
 
+// Made by Claude:
 // reachable reports whether target can be reached from pos within speed
 // steps, using a breadth-first search through tiles accepted by passable
 // and moving one step at a time along the four cardinal directions.
@@ -315,6 +318,7 @@ func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int, pass
 }
 
 // region pathfinding
+// Made by Claude
 
 // pathNode is one entry in the A* open set: a candidate tile, the cost to
 // reach it so far (g), and its estimated total cost to the goal (f = g +
@@ -429,6 +433,7 @@ func (w *World) distanceFor(u *agents.Unit, vision []geometry.Pos) agents.Distan
 }
 
 // region vision
+// Made by Claude
 
 // GetVisibleTiles returns every in-bounds tile within visionRange of pos
 // that is in direct line of sight of pos. This is where a future height map

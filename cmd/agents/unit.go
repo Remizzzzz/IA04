@@ -97,6 +97,7 @@ func NewUnit(strategy Strategy, allegiance int) *Unit {
 	}
 }
 
+// Made by Claude :
 // Remember records that tile p was seen and whether it's passable, in the
 // unit's own memory and, for a Coordinated unit, in its army's shared memory
 // too - pooled intel is part of what coordinating buys. World calls this
@@ -110,6 +111,7 @@ func (u *Unit) Remember(p geometry.Pos, passable bool) {
 	}
 }
 
+// Made by Claude :
 // Knowledge returns the terrain memory this unit plans its routes with: its
 // army's shared memory if it coordinates with one, its own otherwise.
 func (u *Unit) Knowledge() KnownMap {
