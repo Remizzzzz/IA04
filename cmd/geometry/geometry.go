@@ -10,6 +10,7 @@ type Pos struct {
 	Y int
 }
 
+// Made by Claude:
 // ManhattanDistance returns the grid distance between a and b (the number of
 // cardinal steps needed to go from one to the other).
 func ManhattanDistance(a, b Pos) int {

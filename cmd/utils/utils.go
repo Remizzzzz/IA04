@@ -15,3 +15,13 @@ func RandInt(start int, end int) int {
 	}
 	return rng.Intn(end-start) + start
 }
+
+// Made by AI : Implements contains
+func Contains[T comparable](tab []T, element T) bool {
+	for _, value := range tab {
+		if value == element {
+			return true
+		}
+	}
+	return false
+}

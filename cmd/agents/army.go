@@ -3,6 +3,7 @@ package agents
 import (
 	"math"
 	"soldier/cmd/geometry"
+	"soldier/cmd/utils"
 )
 
 // ArmyPhase identifies which stage of the default army strategy an army is
@@ -57,16 +58,17 @@ type Army struct {
 	Soldiers   []*Unit
 	General    *Unit
 	Phase      ArmyPhase
-	Enemy      *Unit    // the enemy the army is hunting, nil while it has none and is exploring
+	Enemies    []*Unit // the enemies the army percieves. By default, the army is hunting Enemies[0], nil while it has none and is exploring
+	Target     *Unit
 	Known      KnownMap // terrain pooled from every Coordinated soldier's sightings
 	progress   map[*Unit]regroupProgress
 
-	clock        int                  // turns elapsed, used to timestamp sightings
-	lastSeen     map[geometry.Pos]int // turn each known tile was last seen by a soldier
-	enemyInSight bool                 // whether any soldier sees Enemy this turn
-	lastKnown    geometry.Pos         // where Enemy was last seen
-	goal         geometry.Pos         // where the army heads this turn while advancing
-	hasGoal      bool
+	clock                   int                  // turns elapsed, used to timestamp sightings
+	lastSeen                map[geometry.Pos]int // turn each known tile was last seen by a soldier
+	targetInSight           bool                 // whether any soldier sees Enemy this turn
+	lastKnownTargetPosition geometry.Pos         // where Enemy was last seen
+	goal                    geometry.Pos         // where the army heads this turn while advancing
+	hasGoal                 bool
 }
 
 // NewArmy creates an army led by general, who is also its first soldier.
@@ -89,7 +91,7 @@ func NewArmy(general *Unit) *Army {
 // any Perceive of the turn.
 func (a *Army) BeginTurn() {
 	a.clock++
-	a.enemyInSight = false
+	a.targetInSight = false
 }
 
 // IsActive reports whether the army has at least one soldier besides its
@@ -143,12 +145,16 @@ func (a *Army) Perceive(targets []*Unit) {
 		if t.Allegiance == a.Allegiance {
 			continue
 		}
-		if a.Enemy == nil {
-			a.Enemy = t
+		if len(a.Enemies) == 0 { //Default target is first enemy encountered
+			a.Target = t
+			a.Enemies = append(a.Enemies, t)
 		}
-		if t == a.Enemy {
-			a.enemyInSight = true
-			a.lastKnown = t.Position
+		if !utils.Contains(a.Enemies, t) {
+			a.Enemies = append(a.Enemies, t)
+		}
+		if t == a.Target {
+			a.targetInSight = true
+			a.lastKnownTargetPosition = t.Position
 		}
 	}
 }
@@ -160,11 +166,11 @@ func (a *Army) Perceive(targets []*Unit) {
 // one. size is the width of the (square) battlefield, needed to know where
 // unexplored ground can be. Call it after every Perceive of the turn.
 func (a *Army) ResolveGoal(size int) {
-	if a.Enemy != nil && !a.enemyInSight && a.anySoldierWithin(a.lastKnown, ArrivalRadius) {
-		a.Enemy = nil // reached where it was last seen and it's gone: lost track of it
+	if a.Target != nil && !a.targetInSight && a.anySoldierWithin(a.lastKnownTargetPosition, ArrivalRadius) {
+		a.Target = nil // reached where it was last seen and it's gone: lost track of it
 	}
-	if a.Enemy != nil {
-		a.goal, a.hasGoal = a.lastKnown, true
+	if a.Target != nil {
+		a.goal, a.hasGoal = a.lastKnownTargetPosition, true
 		return
 	}
 	a.goal, a.hasGoal = a.explorationGoal(size)
@@ -179,6 +185,7 @@ func (a *Army) anySoldierWithin(p geometry.Pos, radius int) bool {
 	return false
 }
 
+// Made by Claude :
 // explorationGoal picks where to look for a new target: the unexplored tile
 // bordering known ground that's closest to the general, or once everything
 // reachable has been seen, the known tile seen longest ago (a patrol, since
@@ -221,6 +228,7 @@ func (a *Army) explorationGoal(size int) (geometry.Pos, bool) {
 	return best, true
 }
 
+// Made by Claude :
 // bordersKnownGround reports whether p has a known passable neighbor, i.e.
 // whether the army could walk up to it to see what's there.
 func (a *Army) bordersKnownGround(p geometry.Pos) bool {
@@ -259,6 +267,7 @@ func (a *Army) Decide(u *Unit, reachable []geometry.Pos, targets []*Unit, distan
 	return Action{Kind: Stay}
 }
 
+// Made by Claude :
 // nearestEnemy returns the closest of targets that isn't u's own allegiance,
 // or nil if none of them are. This is just picking which visible enemy to
 // react to, not plotting a route, so plain straight-line distance is enough.
@@ -276,6 +285,7 @@ func nearestEnemy(u *Unit, targets []*Unit) *Unit {
 	return nearest
 }
 
+// Made by Claude :
 // effectiveDistance treats an unreachable path (-1, no route exists at all)
 // as farther than any real path on the grid: worse than any finite distance
 // when trying to approach a target, and the safest possible outcome when
@@ -287,6 +297,7 @@ func effectiveDistance(d int) int {
 	return d
 }
 
+// Made by Claude :
 // moveToward picks the reachable tile with the shortest walking distance to
 // target as far as the unit knows, using distance (an A* search over its
 // terrain memory, see World.knownPathLength) rather than straight-line
@@ -305,6 +316,7 @@ func moveToward(u *Unit, reachable []geometry.Pos, target geometry.Pos, distance
 	return Action{Kind: Move, Target: best}
 }
 
+// Made by Claude :
 // moveAwayFrom picks the reachable tile with the longest true walking
 // distance from threat, using the same A* distance oracle as moveToward but
 // maximizing instead of minimizing.
