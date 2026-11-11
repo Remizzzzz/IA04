@@ -296,10 +296,12 @@ Reste caché loin des combats et change souvent de position, puisque c'est la ci
 L'objectif du projet est de comparer des stratégies (individualistes contre coordonnées, et les stratégies macro entre elles). Pour que les comparaisons aient un sens, il faut pouvoir lancer beaucoup de parties dans des conditions contrôlées :
 - **Mode sans affichage** : lancer des centaines de parties à la suite sans `PrintWorld` ni le `Sleep` d'une seconde entre les tours.
 - **Graine aléatoire configurable** : aujourd'hui, `utils.rng` est initialisé avec l'heure, donc aucune partie n'est reproductible. Il faut pouvoir fixer la graine pour rejouer exactement une partie (utile aussi pour le débogage).
-- **Cartes équitables** : soit des cartes symétriques, soit chaque carte jouée deux fois en inversant les camps, sinon le hasard des obstacles et des positions de départ fausse les résultats.
+- **Cartes équitables** : soit des cartes symétriques, soit chaque carte jouée deux fois en inversant les camps, sinon le hasard des obstacles et des positions de départ fausse les résultats. Et garantir la connexité (sinon deux armées séparées donnent un nul)
 - **Métriques à enregistrer** : vainqueur et condition de victoire, nombre de tours, pertes de chaque camp (par sous-type), munitions et budget restants...
 - **Matrice des affrontements** : chaque stratégie contre chaque autre, sur N parties, pour obtenir des taux de victoire comparables. Avec le budget identique, on s'attend à un équilibre de type pierre-feuille-ciseaux entre les compositions d'armée, qu'il sera intéressant de vérifier.
 - **Export des résultats** (CSV par exemple) pour pouvoir faire des graphiques.
+- **Modes d'exécution** (un binaire, flags) : `--headless` (parties en parallèle entre elles), `--gui`, `--seed N` dans les deux modes.
+- **Mode graphique (ebiten)** : pause, pas à pas, vitesse, réinitialisation ; unités colorées par armée avec forme par sous-type, barres de PV et de munitions, overlays (vision, carte connue de l'armée, cible concentrée, objectif), clic sur une unité pour voir son rôle et son action.
 
 ## Pour plus tard
 
