@@ -15,7 +15,6 @@ type Strategy int
 const (
 	Random      Strategy = iota // move to a random reachable tile each turn
 	Coordinated                 // Every units from the same allegiance works together and are coordinated
-	Squad                       // Every units from the same allegiance works by group of X units. They coordinate multiple squads (to implement later maybe)
 )
 
 // ActionKind identifies what a unit chose to do this turn.
@@ -75,18 +74,19 @@ type Order struct {
 // free to hold *Unit references without agents importing world back (an
 // import cycle).
 type Unit struct {
+	UnitType UnitType
+
 	Speed       int
 	Position    geometry.Pos
 	Strategy    Strategy
-	UnitType    UnitType
 	VisionRange int
 	Vision      []geometry.Pos // tiles seen as of the last Order received
 	Known       KnownMap       // terrain this unit has seen itself, accumulated turn after turn
 	Allegiance  int            // units with the same allegiance recognize each other as allies
 	Army        *Army          // the army this unit belongs to, set by World on spawn
-	Alive       bool
-	Orders      chan Order  // World -> Unit, sent at the start of each turn
-	Actions     chan Action // Unit -> World, the action chosen for this turn
+	Alive       bool           //When it's dead, the unit should notify its army
+	Orders      chan Order     // World -> Unit, sent at the start of each turn
+	Actions     chan Action    // Unit -> World, the action chosen for this turn
 
 	//Combat properties
 	LifePoints     int
@@ -236,6 +236,9 @@ func (u *Unit) strategyCoordinated(order Order) Action {
 // owns the grid (and, eventually, combat state).
 func (u *Unit) Simulate() {
 	go func() {
+		if !u.Alive {
+			//Notify army (to implement)
+		}
 		for order := range u.Orders {
 			u.Vision = order.Vision
 			u.Actions <- u.UseStrategy(order)
