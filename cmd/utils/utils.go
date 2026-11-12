@@ -8,6 +8,12 @@ import (
 // rng is a package-level random source seeded once at startup.
 var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
+// Tuple allow to create a pair of values of any given types
+type Tuple[T1 any, T2 any] struct { //Because it's always useful
+	First  T1
+	Second T2
+}
+
 // RandInt returns a random integer in [start, end), or start if the range is empty or invalid.
 func RandInt(start int, end int) int {
 	if end <= start {

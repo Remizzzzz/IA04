@@ -35,6 +35,14 @@ type Action struct {
 	Target geometry.Pos
 }
 
+type UnitType int
+
+const (
+	Infantry UnitType = iota //Infantry is default unit
+	Sniper
+	Tank
+)
+
 // KnownMap is a memory of the terrain: every tile ever seen, mapped to
 // whether it's passable (not an obstacle). Tiles never seen are absent.
 type KnownMap map[geometry.Pos]bool
@@ -70,6 +78,7 @@ type Unit struct {
 	Speed       int
 	Position    geometry.Pos
 	Strategy    Strategy
+	UnitType    UnitType
 	VisionRange int
 	Vision      []geometry.Pos // tiles seen as of the last Order received
 	Known       KnownMap       // terrain this unit has seen itself, accumulated turn after turn
@@ -78,22 +87,61 @@ type Unit struct {
 	Alive       bool
 	Orders      chan Order  // World -> Unit, sent at the start of each turn
 	Actions     chan Action // Unit -> World, the action chosen for this turn
+
+	//Combat properties
+	LifePoints     int
+	ShootingRange  int
+	ShootingDamage int
 }
 
 // NewUnit creates a unit with the given strategy and allegiance. Several
 // units can share an allegiance so they end up in the same Army together
 // (see World.SpawnAllied). It still needs to be placed in a World before it
 // can take part in a simulation.
-func NewUnit(strategy Strategy, allegiance int) *Unit {
+func NewUnit(strategy Strategy, allegiance int, unitType UnitType) *Unit {
+	var speed int
+	var visionRange int
+	var shootingRange int
+	var LP int
+	var shootingDamage int
+	switch unitType {
+	case Infantry:
+		speed = 1
+		visionRange = 5
+		shootingRange = 3
+		LP = 3
+		shootingDamage = 1
+	case Tank:
+		speed = 1
+		visionRange = 6
+		shootingRange = 4
+		LP = 6
+		shootingDamage = 2
+	case Sniper:
+		speed = 1
+		visionRange = 9
+		shootingRange = 7
+		LP = 2
+		shootingDamage = 2
+	default: //Basic unit that can't shoot
+		speed = 1
+		visionRange = 3
+		shootingRange = 0
+		LP = 4
+		shootingDamage = 0
+	}
 	return &Unit{
-		Speed:       1,
-		Strategy:    strategy,
-		VisionRange: 3,
-		Known:       make(KnownMap),
-		Allegiance:  allegiance,
-		Alive:       true,
-		Orders:      make(chan Order),
-		Actions:     make(chan Action),
+		Speed:          speed,
+		Strategy:       strategy,
+		VisionRange:    visionRange,
+		ShootingRange:  shootingRange,
+		ShootingDamage: shootingDamage,
+		LifePoints:     LP,
+		Known:          make(KnownMap),
+		Allegiance:     allegiance,
+		Alive:          true,
+		Orders:         make(chan Order),
+		Actions:        make(chan Action),
 	}
 }
 
@@ -126,26 +174,35 @@ func (u *Unit) Knowledge() KnownMap {
 // World (see World.SpawnUnit) before it can take part in a simulation.
 func NewUnitDefault(strategy Strategy) *Unit {
 	nArmies++
-	return NewUnit(strategy, nArmies)
+	return NewUnit(strategy, nArmies, Infantry)
 }
 
 // region strategy
 
 // UseStrategy picks this turn's Action out of the reachable tiles and
 // targets carried by the last Order, according to the unit's Strategy.
-func (u *Unit) UseStrategy(reachable []geometry.Pos, targets []*Unit, distance DistanceFunc) Action {
+func (u *Unit) UseStrategy(order Order) Action {
 	switch u.Strategy {
 	case Random:
-		return u.strategyRandom(reachable)
+		return u.strategyRandom(order)
 	case Coordinated:
-		return u.strategyCoordinated(reachable, targets, distance)
+		return u.strategyCoordinated(order)
 	}
 	return Action{Kind: Stay}
 }
 
 // strategyRandom picks a random tile among the reachable ones, excluding the
 // unit's own position, and moves there; it stays put if there is nowhere to go.
-func (u *Unit) strategyRandom(reachable []geometry.Pos) Action {
+func (u *Unit) strategyRandom(order Order) Action {
+	reachable := order.Reachable
+	for _, target := range order.Targets { //If enemy in sight, shoot the first one seen.
+		if target.Allegiance != u.Allegiance {
+			if geometry.EuclidianDistance(target.Position, u.Position) <= u.ShootingRange {
+				return Action{Kind: Shoot, Target: target.Position}
+			}
+		}
+	}
+	//If the unit couldn't shoot, then it moves again, randomly
 	others := make([]geometry.Pos, 0, len(reachable))
 	for _, p := range reachable {
 		if p != u.Position {
@@ -161,11 +218,14 @@ func (u *Unit) strategyRandom(reachable []geometry.Pos) Action {
 // strategyCoordinated asks the unit's Army what to do when it actually has
 // soldiers to coordinate and a living general to issue the plan; otherwise
 // it falls back to deciding on its own.
-func (u *Unit) strategyCoordinated(reachable []geometry.Pos, targets []*Unit, distance DistanceFunc) Action {
+func (u *Unit) strategyCoordinated(order Order) Action {
+	reachable := order.Reachable
+	targets := order.Targets
+	distance := order.Distance
 	if u.Army != nil && u.Army.IsActive() && u.Army.General.Alive {
 		return u.Army.Decide(u, reachable, targets, distance)
 	}
-	return u.strategyRandom(reachable)
+	return u.strategyRandom(order)
 }
 
 // region simulation
@@ -178,7 +238,7 @@ func (u *Unit) Simulate() {
 	go func() {
 		for order := range u.Orders {
 			u.Vision = order.Vision
-			u.Actions <- u.UseStrategy(order.Reachable, order.Targets, order.Distance)
+			u.Actions <- u.UseStrategy(order)
 		}
 	}()
 }

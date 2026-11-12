@@ -4,6 +4,8 @@
 // and that would otherwise create an import cycle.
 package geometry
 
+import "math"
+
 // Pos is a coordinate on the grid.
 type Pos struct {
 	X int
@@ -23,4 +25,10 @@ func ManhattanDistance(a, b Pos) int {
 		dy = -dy
 	}
 	return dx + dy
+}
+
+func EuclidianDistance(a, b Pos) int {
+	dx := float64(b.X - a.X)
+	dy := float64(b.Y - a.Y)
+	return int(math.Sqrt(dx*dx + dy*dy))
 }
