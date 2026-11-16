@@ -158,10 +158,21 @@ func (w *World) GetRandomPos() geometry.Pos {
 	return geometry.Pos{X: utils.RandInt(0, w.Size), Y: utils.RandInt(0, w.Size)}
 }
 
-// GetRandomFreePos returns a random position among the tiles that were free
-// at world creation time.
+// GetRandomFreePos returns a random position that is still free.
+// TODO: For larger scenarios, avoid rebuilding the available-tile slice on
+// every spawn and return an error instead of panicking when no tile remains.
+// TODO: Allow a configurable random seed to reproduce initial placements.
 func (w *World) GetRandomFreePos() geometry.Pos {
-	return w.FreeTiles[utils.RandInt(0, len(w.FreeTiles))]
+	available := make([]geometry.Pos, 0)
+	for _, p := range w.FreeTiles {
+		if w.IsFree(p) {
+			available = append(available, p)
+		}
+	}
+	if len(available) == 0 {
+		panic("cannot spawn unit: no free tile remains")
+	}
+	return available[utils.RandInt(0, len(available))]
 }
 
 // SpawnUnit creates a solo unit with the given strategy, places it on a
@@ -182,17 +193,17 @@ func (w *World) SpawnUnitAt(strategy agents.Strategy, p geometry.Pos) *agents.Un
 // SpawnAllied creates a unit with the given strategy and allegiance, places
 // it on a random free tile, and enlists it into the Army for that
 // allegiance (forming one if this is the first unit to carry it).
-func (w *World) SpawnAllied(strategy agents.Strategy, allegiance int) *agents.Unit {
-	return w.spawn(agents.NewUnit(strategy, allegiance, agents.Infantry), w.GetRandomFreePos())
+func (w *World) SpawnAllied(strategy agents.Strategy, allegiance int, unitType agents.UnitType) *agents.Unit {
+	return w.spawn(agents.NewUnit(strategy, allegiance, unitType), w.GetRandomFreePos())
 }
 
 // SpawnAlliedAt is like SpawnAllied but places the unit at a specific tile,
 // panicking if that tile isn't free.
-func (w *World) SpawnAlliedAt(strategy agents.Strategy, allegiance int, p geometry.Pos) *agents.Unit {
+func (w *World) SpawnAlliedAt(strategy agents.Strategy, allegiance int, p geometry.Pos, unitType agents.UnitType) *agents.Unit {
 	if !w.IsFree(p) {
 		panic(fmt.Sprintf("cannot spawn unit at position (%d, %d): tile is not free", p.X, p.Y))
 	}
-	return w.spawn(agents.NewUnit(strategy, allegiance, agents.Infantry), p)
+	return w.spawn(agents.NewUnit(strategy, allegiance, unitType), p)
 }
 
 func (w *World) spawn(u *agents.Unit, p geometry.Pos) *agents.Unit {
