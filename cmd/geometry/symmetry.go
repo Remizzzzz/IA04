@@ -23,3 +23,21 @@ func (s Symmetry) Transform(p Pos, size int) []Pos {
 		return []Pos{p}
 	}
 }
+
+// This function verifies that the position is in the original domain
+// of the symmetry (in Vertical symmetry, left part of the map is the domain)
+// This function will likely be used for army spawn logic
+func (s Symmetry) InDomain(p Pos, size int) bool {
+	switch s {
+	case VerticalSymmetry:
+		return p.X < size-1-p.X //in vertical symmetry, original x is always lower than its image
+	case HorizontalSymmetry:
+		return p.Y < size-1-p.Y //same
+	case DoubleSymmetry:
+		return (p.X < size-1-p.X) && (p.Y < size-1-p.Y) //must respect both obviously
+	case NoSymmetry:
+		return true //every position is in the domain
+	default:
+		panic("InDomain : unknown symmetry")
+	}
+}

@@ -164,46 +164,6 @@ func (w *World) GetRandomFreePos() geometry.Pos {
 	return available[utils.RandInt(0, len(available))]
 }
 
-// SpawnUnit creates a solo unit with the given strategy, places it on a
-// random free tile, registers it with the world and starts its goroutine.
-func (w *World) SpawnUnit(strategy agents.Strategy) *agents.Unit {
-	return w.spawn(agents.NewUnitDefault(strategy), w.GetRandomFreePos())
-}
-
-// SpawnUnitAt is like SpawnUnit but places the unit at a specific tile,
-// panicking if that tile isn't free.
-func (w *World) SpawnUnitAt(strategy agents.Strategy, p geometry.Pos) *agents.Unit {
-	if !w.IsFree(p) {
-		panic(fmt.Sprintf("cannot spawn unit at position (%d, %d): tile is not free", p.X, p.Y))
-	}
-	return w.spawn(agents.NewUnitDefault(strategy), p)
-}
-
-// SpawnAllied creates a unit with the given strategy and allegiance, places
-// it on a random free tile, and enlists it into the Army for that
-// allegiance (forming one if this is the first unit to carry it).
-func (w *World) SpawnAllied(strategy agents.Strategy, allegiance int, unitType agents.UnitType) *agents.Unit {
-	return w.spawn(agents.NewUnit(strategy, allegiance, unitType), w.GetRandomFreePos())
-}
-
-// SpawnAlliedAt is like SpawnAllied but places the unit at a specific tile,
-// panicking if that tile isn't free.
-func (w *World) SpawnAlliedAt(strategy agents.Strategy, allegiance int, p geometry.Pos, unitType agents.UnitType) *agents.Unit {
-	if !w.IsFree(p) {
-		panic(fmt.Sprintf("cannot spawn unit at position (%d, %d): tile is not free", p.X, p.Y))
-	}
-	return w.spawn(agents.NewUnit(strategy, allegiance, unitType), p)
-}
-
-func (w *World) spawn(u *agents.Unit, p geometry.Pos) *agents.Unit {
-	u.Position = p
-	w.SetTile(p, occupied)
-	w.Units = append(w.Units, u)
-	w.enlist(u)
-	u.Simulate()
-	return u
-}
-
 // enlist finds the Army matching u's allegiance, or forms a new one with u
 // as general if none exists yet, and wires u.Army so the unit's own strategy
 // can consult it directly.
@@ -277,8 +237,9 @@ func (w *World) GetReachableTiles(pos geometry.Pos, speed int, visible []geometr
 
 // Made by Claude:
 // reachable reports whether target can be reached from pos within speed
-// steps, using a breadth-first search through tiles accepted by passable
-// and moving one step at a time along the four cardinal directions.
+// steps, using a breadth-first search (see geometry.BFS) through tiles
+// accepted by passable and moving one step at a time along the four cardinal
+// directions.
 func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int, passable func(geometry.Pos) bool) bool {
 	if target == pos {
 		return true
@@ -287,35 +248,20 @@ func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int, pass
 		return false
 	}
 
-	type node struct {
-		pos  geometry.Pos
-		step int
-	}
-	queue := []node{{pos: pos}}
-	visited := map[geometry.Pos]bool{pos: true}
-	directions := [...]geometry.Pos{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}} // right/left/down/up
-
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		if current.step >= speed {
-			continue // reached the speed limit along this path, don't expand further
+	steps := map[geometry.Pos]int{pos: 0} // steps[p]: number of steps from pos to p
+	found := false
+	geometry.BFS(w.Size, []geometry.Pos{pos}, passable, func(p, from geometry.Pos) bool {
+		steps[p] = steps[from] + 1
+		if steps[p] > speed {
+			return false // BFS visits closest first: every tile left is out of reach too
 		}
-
-		for _, direction := range directions {
-			next := geometry.Pos{X: current.pos.X + direction.X, Y: current.pos.Y + direction.Y}
-			if visited[next] || w.OutOfRange(next) || !passable(next) {
-				continue
-			}
-			if next == target {
-				return true
-			}
-			visited[next] = true
-			queue = append(queue, node{pos: next, step: current.step + 1})
+		if p == target {
+			found = true
+			return false
 		}
-	}
-
-	return false
+		return true
+	})
+	return found
 }
 
 // region pathfinding

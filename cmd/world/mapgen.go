@@ -54,21 +54,22 @@ func NewMapFromConfig(cfg MapConfig) ([][]Tile, []geometry.Pos) {
 // connectComponents carves corridors through obstacles until grid's free
 // tiles form a single connected zone, keeping grid symmetric under sym.
 //
-// While there is more than one zone, it runs a BFS that starts from every
-// tile of the largest zone at once and, unlike freeComponents, is allowed to
-// walk through obstacles. It stops at the first free tile outside the largest
-// zone: the tiles it crossed to get there are all obstacles, and since a BFS
-// finds the shortest route, they are the fewest obstacles that need removing
-// to join that zone to the largest one. Those tiles, along with all their
-// images under sym, are made free - carving whole orbits keeps the map
-// symmetric, and also joins the mirror images of the zone in the same pass.
+// While there is more than one zone, it runs a BFS (see geometry.BFS) that
+// starts from every tile of the largest zone at once and, unlike
+// freeComponents, is allowed to walk through obstacles. It stops at the first
+// free tile outside the largest zone: the tiles it crossed to get there are
+// all obstacles, and since a BFS finds the shortest route, they are the fewest
+// obstacles that need removing to join that zone to the largest one. Those
+// tiles, along with all their images under sym, are made free - carving whole
+// orbits keeps the map symmetric, and also joins the mirror images of the
+// zone in the same pass.
 //
 // It always terminates: each pass joins at least one zone to the largest one,
 // and removing obstacles never splits a zone, so the number of zones strictly
 // decreases. A grid with no free tile at all is left untouched.
 func connectComponents(grid [][]Tile, sym geometry.Symmetry) {
 	size := len(grid)
-	directions := [...]geometry.Pos{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}} // right/left/down/up
+	anywhere := func(geometry.Pos) bool { return true } // dig through obstacles too
 
 	for {
 		comps := freeComponents(grid)
@@ -82,41 +83,22 @@ func connectComponents(grid [][]Tile, sym geometry.Symmetry) {
 			}
 		}
 
-		// BFS from every tile of the largest zone, through obstacles too.
-		// parent[p] is the tile the BFS came from to reach p; tiles of the
-		// largest zone are the starting points, so they have no parent.
-		visited := make([][]bool, size)
-		for y := range visited {
-			visited[y] = make([]bool, size)
-		}
-		queue := make([]geometry.Pos, 0, len(largest))
-		for _, p := range largest {
-			visited[p.Y][p.X] = true
-			queue = append(queue, p)
-		}
+		// BFS from every tile of the largest zone. parent[p] is the tile the
+		// BFS came from to reach p; tiles of the largest zone are the starting
+		// points, so they have no parent.
 		parent := make(map[geometry.Pos]geometry.Pos)
-
 		var reached geometry.Pos // first free tile found outside the largest zone
 		found := false
-		for len(queue) > 0 && !found {
-			current := queue[0]
-			queue = queue[1:]
-			for _, d := range directions {
-				next := geometry.Pos{X: current.X + d.X, Y: current.Y + d.Y}
-				if next.X < 0 || next.X >= size || next.Y < 0 || next.Y >= size || visited[next.Y][next.X] {
-					continue // outside the grid, or already reached
-				}
-				visited[next.Y][next.X] = true
-				parent[next] = current
-				if grid[next.Y][next.X] == free {
-					// every tile of the largest zone is already visited, so a
-					// free tile reached now belongs to another zone
-					reached, found = next, true
-					break
-				}
-				queue = append(queue, next) // an obstacle: keep digging from it
+		geometry.BFS(size, largest, anywhere, func(p, from geometry.Pos) bool {
+			parent[p] = from
+			if grid[p.Y][p.X] == free {
+				// every tile of the largest zone is a start, so a free tile
+				// reached now belongs to another zone
+				reached, found = p, true
+				return false
 			}
-		}
+			return true // an obstacle: keep digging from it
+		})
 		if !found {
 			return // can't happen (the BFS covers the whole grid), but never loop forever
 		}
@@ -138,50 +120,37 @@ func connectComponents(grid [][]Tile, sym geometry.Symmetry) {
 // directions (the same moves units make, see World.reachable). Components are
 // returned in discovery order (row by row), each one as the list of its tiles.
 //
-// It runs one breadth-first search (BFS) per component: starting from a free
-// tile nobody has visited yet, it visits every free neighbour of that tile,
-// then every free neighbour of those, and so on, like a flood fill spreading
-// outward ring by ring, until it can't reach any new tile - everything it
-// visited along the way is one component.
+// It runs one breadth-first search (see geometry.BFS) per component: starting
+// from a free tile no component holds yet, it visits every free neighbour of
+// that tile, then every free neighbour of those, and so on, like a flood fill
+// spreading outward ring by ring, until it can't reach any new tile -
+// everything it visited along the way is one component.
 func freeComponents(grid [][]Tile) [][]geometry.Pos {
 	size := len(grid)
-	visited := make([][]bool, size) // visited[y][x]: tile already assigned to a component
-	for y := range visited {
-		visited[y] = make([]bool, size)
+	assigned := make([][]bool, size) // assigned[y][x]: tile already part of a component
+	for y := range assigned {
+		assigned[y] = make([]bool, size)
 	}
-	directions := [...]geometry.Pos{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}} // right/left/down/up
+	isFree := func(p geometry.Pos) bool { return grid[p.Y][p.X] == free }
 
 	components := make([][]geometry.Pos, 0)
 	for y := range grid {
 		for x := range grid[y] {
-			if grid[y][x] != free || visited[y][x] {
+			if grid[y][x] != free || assigned[y][x] {
 				continue // an obstacle, or a tile an earlier BFS already reached
 			}
 
-			// New component: BFS from (x, y). queue holds the tiles reached but
-			// whose neighbours haven't been looked at yet; component collects
-			// every tile reached.
+			// New component: every free tile the BFS reaches from (x, y). Tiles
+			// of earlier components can't be reached from here (otherwise
+			// (x, y) would belong to one of them), so no need to exclude them.
 			start := geometry.Pos{X: x, Y: y}
-			visited[y][x] = true
-			queue := []geometry.Pos{start}
+			assigned[y][x] = true
 			component := []geometry.Pos{start}
-
-			for len(queue) > 0 {
-				current := queue[0]
-				queue = queue[1:]
-				for _, d := range directions {
-					next := geometry.Pos{X: current.X + d.X, Y: current.Y + d.Y}
-					if next.X < 0 || next.X >= size || next.Y < 0 || next.Y >= size {
-						continue // outside the grid
-					}
-					if grid[next.Y][next.X] != free || visited[next.Y][next.X] {
-						continue // can't walk there, or already reached
-					}
-					visited[next.Y][next.X] = true // mark now so it's never queued twice
-					queue = append(queue, next)
-					component = append(component, next)
-				}
-			}
+			geometry.BFS(size, []geometry.Pos{start}, isFree, func(p, _ geometry.Pos) bool {
+				assigned[p.Y][p.X] = true
+				component = append(component, p)
+				return true // explore the whole component
+			})
 			components = append(components, component)
 		}
 	}

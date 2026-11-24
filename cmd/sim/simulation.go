@@ -29,7 +29,7 @@ func SimulateArmyWorldWithComposition(cfg world.MapConfig) {
 
 	for allegiance := 1; allegiance <= 2; allegiance++ {
 		for _, unitType := range composition {
-			w.SpawnAllied(agents.Random, allegiance, unitType)
+			w.SpawnAlliedRandom(agents.Random, allegiance, unitType)
 		}
 	}
 
@@ -52,7 +52,7 @@ func SimulateArmyWorldWithComposition(cfg world.MapConfig) {
 func SimulateRandomWorld(cfg world.MapConfig, numberOfEntity int) {
 	w := world.NewWorld(cfg)
 	for i := 0; i < numberOfEntity; i++ {
-		w.SpawnUnit(agents.Random)
+		w.SpawnUnitRandom(agents.Random)
 	}
 
 	// Run the simulation loop in the background so the main goroutine can
@@ -78,7 +78,7 @@ func SimulateArmyWorld(numberOfArmies int, soldiersPerArmy int, cfg world.MapCon
 	w := world.NewWorld(cfg)
 	for allegiance := 1; allegiance <= numberOfArmies; allegiance++ {
 		for i := 0; i < soldiersPerArmy; i++ {
-			w.SpawnAllied(agents.Coordinated, allegiance, agents.Infantry)
+			w.SpawnAlliedRandom(agents.Coordinated, allegiance, agents.Infantry)
 		}
 	}
 
