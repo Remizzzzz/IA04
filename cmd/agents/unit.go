@@ -236,9 +236,6 @@ func (u *Unit) strategyCoordinated(order Order) Action {
 // owns the grid (and, eventually, combat state).
 func (u *Unit) Simulate() {
 	go func() {
-		if !u.Alive {
-			//Notify army (to implement)
-		}
 		for order := range u.Orders {
 			u.Vision = order.Vision
 			u.Actions <- u.UseStrategy(order)

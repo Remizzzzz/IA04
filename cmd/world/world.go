@@ -537,8 +537,16 @@ func (w *World) ResolveDamage(target *agents.Unit, damage int) {
 		idx := slices.Index(w.Units, target)
 		w.Units = slices.Delete(w.Units, idx, idx+1)
 		w.SetTile(target.Position, free)
-		//Let the unit manage its destruction further
+		//Remove the unit from it's army and close its channel
 		target.Alive = false
+		target.Army.NotifyDeath(target)
+		close(target.Orders)
+		close(target.Actions)
+		//Remove army if it no longer have soldiers
+		if len(target.Army.Soldiers) == 0 {
+			idx := slices.Index(w.Armies, target.Army)
+			w.Armies = slices.Delete(w.Armies, idx, idx+1)
+		}
 	}
 }
 

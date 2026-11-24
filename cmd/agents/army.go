@@ -2,6 +2,7 @@ package agents
 
 import (
 	"math"
+	"slices"
 	"soldier/cmd/geometry"
 	"soldier/cmd/utils"
 )
@@ -92,6 +93,20 @@ func NewArmy(general *Unit) *Army {
 func (a *Army) BeginTurn() {
 	a.clock++
 	a.targetInSight = false
+}
+
+// NotifyDeath is called by world in ResolveDamage if the target unit dies. The army then remove
+// the unit from its Soldiers list
+func (a *Army) NotifyDeath(unit *Unit) {
+	idx := slices.Index(a.Soldiers, unit)
+	a.Soldiers = slices.Delete(a.Soldiers, idx, idx+1)
+	if unit == a.General {
+		if len(a.Soldiers) > 0 {
+			a.General = a.Soldiers[0]
+		} else {
+			a.General = nil
+		}
+	}
 }
 
 // IsActive reports whether the army has at least one soldier besides its
