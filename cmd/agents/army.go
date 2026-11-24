@@ -50,12 +50,23 @@ type regroupProgress struct {
 	stuckTurns   int
 }
 
+// ArmyStrategy identifies which collective policy an Army uses to pick its
+// soldiers' actions (see Army.Decide). Distinct from the per-unit Strategy,
+// which only decides whether a unit defers to its army at all.
+type ArmyStrategy int
+
+const (
+	Default         ArmyStrategy = iota // S2: regroup around the general, then advance together on the goal
+	SharedKnowledge                     // S1: not implemented yet, falls back to Default
+)
+
 // Army groups every unit sharing an allegiance under a single general. It is
 // formed the moment the first unit of an allegiance is spawned (see
 // World.enlist); IsActive reports whether it actually has anyone to
 // coordinate with yet.
 type Army struct {
 	Allegiance int
+	Strategy   ArmyStrategy
 	Soldiers   []*Unit
 	General    *Unit
 	Phase      ArmyPhase
@@ -78,6 +89,7 @@ func NewArmy(general *Unit) *Army {
 	soldiers = append(soldiers, general)
 	return &Army{
 		Allegiance: general.Allegiance,
+		Strategy:   Default,
 		Soldiers:   soldiers,
 		General:    general,
 		Known:      make(KnownMap),
@@ -255,14 +267,16 @@ func (a *Army) bordersKnownGround(p geometry.Pos) bool {
 	return false
 }
 
-// Decide returns the Action u should take under this army's default
+// region Strategy
+
+// defaultStrategy returns the Action u should take under the Default army
 // strategy: regroup around the general, swerving away from any enemy a
 // soldier personally spots along the way, then once regrouped advance
 // together on the army's goal for the turn (see ResolveGoal): the target
 // while it's in sight, its last known position once lost, or unexplored
 // ground while the army has no target. Deliberately simple for now - it
 // will grow once units carry types with their own behaviors.
-func (a *Army) Decide(u *Unit, reachable []geometry.Pos, targets []*Unit, distance DistanceFunc) Action {
+func (a *Army) defaultStrategy(u *Unit, reachable []geometry.Pos, targets []*Unit, distance DistanceFunc) Action {
 	if enemy := nearestEnemy(u, targets); enemy != nil && a.Phase == Regrouping {
 		return moveAwayFrom(u, reachable, enemy.Position, distance)
 	}
@@ -280,6 +294,15 @@ func (a *Army) Decide(u *Unit, reachable []geometry.Pos, targets []*Unit, distan
 		return moveToward(u, reachable, a.goal, distance)
 	}
 	return Action{Kind: Stay}
+}
+
+// Decide returns the Action u should take this turn, delegating to the
+// policy selected by a.Strategy.
+func (a *Army) Decide(u *Unit, reachable []geometry.Pos, targets []*Unit, distance DistanceFunc) Action {
+	switch a.Strategy {
+	default:
+		return a.defaultStrategy(u, reachable, targets, distance)
+	}
 }
 
 // Made by Claude :
