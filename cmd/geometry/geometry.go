@@ -6,10 +6,11 @@ package geometry
 
 import "math"
 
-// Pos is a coordinate on the grid.
+// Pos is a coordinate on the grid. X is the column (grows to the right) and
+// Y is the row (grows downward), so a tile is stored at Grid[Y][X].
 type Pos struct {
-	X int
-	Y int
+	X int // column
+	Y int // row
 }
 
 // Made by Claude:

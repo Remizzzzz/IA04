@@ -40,7 +40,7 @@ func RandCase(probabilitY int) Tile {
 // Turn), which is what lets World hold *agents.Unit references without
 // agents importing world back.
 type World struct {
-	Grid      [][]Tile
+	Grid      [][]Tile // indexed Grid[y][x]: row first, then column (see geometry.Pos)
 	Size      int
 	Printable map[Tile]string // text representation of each Tile, used by PrintWorld
 	FreeTiles []geometry.Pos  // tiles that were free at world creation time (used to spawn units)
@@ -53,12 +53,12 @@ type World struct {
 func NewWorld(N int, probabilitY int) *World {
 	grid := make([][]Tile, N)
 	FreePos := make([]geometry.Pos, 0)
-	for i := range grid {
-		grid[i] = make([]Tile, N)
-		for j := range grid[i] {
-			grid[i][j] = RandCase(probabilitY)
-			if grid[i][j] == free {
-				FreePos = append(FreePos, geometry.Pos{X: i, Y: j})
+	for y := range grid { // y = row
+		grid[y] = make([]Tile, N)
+		for x := range grid[y] { // x = column
+			grid[y][x] = RandCase(probabilitY)
+			if grid[y][x] == free {
+				FreePos = append(FreePos, geometry.Pos{X: x, Y: y})
 			}
 		}
 	}
@@ -71,12 +71,12 @@ func NewWorld(N int, probabilitY int) *World {
 
 // SetTile sets the tile value at pos.
 func (w *World) SetTile(pos geometry.Pos, c Tile) {
-	w.Grid[pos.X][pos.Y] = c
+	w.Grid[pos.Y][pos.X] = c
 }
 
 // GetTile returns the tile value at pos.
 func (w *World) GetTile(pos geometry.Pos) Tile {
-	return w.Grid[pos.X][pos.Y]
+	return w.Grid[pos.Y][pos.X]
 }
 
 // GetUnitAt returns the unit occupying pos, or nil if there isn't one. This
@@ -103,9 +103,9 @@ const colorReset = "\033[0m"
 // PrintWorld renders the grid to stdout using the Printable representation,
 // coloring each occupied tile by the army of the unit standing on it.
 func (w *World) PrintWorld() {
-	for i := range w.Grid {
-		for j := range w.Grid[i] {
-			pos := geometry.Pos{X: i, Y: j}
+	for y := range w.Grid { // one printed line per row
+		for x := range w.Grid[y] {
+			pos := geometry.Pos{X: x, Y: y}
 			tile := w.GetTile(pos)
 			toPrint := w.Printable[tile]
 			if tile == occupied {
@@ -274,9 +274,9 @@ func (w *World) GetReachableTiles(pos geometry.Pos, speed int, visible []geometr
 	passable := func(p geometry.Pos) bool { return visibleSet[p] && w.IsFree(p) }
 
 	reachableTiles := make([]geometry.Pos, 0)
-	for i := pos.X - speed; i <= pos.X+speed; i++ {
-		for j := pos.Y - speed; j <= pos.Y+speed; j++ {
-			candidate := geometry.Pos{X: i, Y: j}
+	for y := pos.Y - speed; y <= pos.Y+speed; y++ {
+		for x := pos.X - speed; x <= pos.X+speed; x++ {
+			candidate := geometry.Pos{X: x, Y: y}
 			if w.reachable(pos, candidate, speed, passable) {
 				reachableTiles = append(reachableTiles, candidate)
 			}
@@ -303,7 +303,7 @@ func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int, pass
 	}
 	queue := []node{{pos: pos}}
 	visited := map[geometry.Pos]bool{pos: true}
-	directions := [...]geometry.Pos{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}} // up/down/left/right
+	directions := [...]geometry.Pos{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}} // right/left/down/up
 
 	for len(queue) > 0 {
 		current := queue[0]
@@ -452,9 +452,9 @@ func (w *World) distanceFor(u *agents.Unit, vision []geometry.Pos) agents.Distan
 // a shorter one.
 func (w *World) GetVisibleTiles(pos geometry.Pos, visionRange int) []geometry.Pos {
 	visible := make([]geometry.Pos, 0)
-	for i := pos.X - visionRange; i <= pos.X+visionRange; i++ {
-		for j := pos.Y - visionRange; j <= pos.Y+visionRange; j++ {
-			target := geometry.Pos{X: i, Y: j}
+	for y := pos.Y - visionRange; y <= pos.Y+visionRange; y++ {
+		for x := pos.X - visionRange; x <= pos.X+visionRange; x++ {
+			target := geometry.Pos{X: x, Y: y}
 			if w.OutOfRange(target) {
 				continue
 			}

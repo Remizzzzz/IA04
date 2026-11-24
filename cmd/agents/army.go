@@ -251,8 +251,8 @@ func (a *Army) explorationGoal(size int) (geometry.Pos, bool) {
 	bestDist := 0
 	found := false
 
-	for x := 0; x < size; x++ {
-		for y := 0; y < size; y++ {
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
 			p := geometry.Pos{X: x, Y: y}
 			if _, seen := a.Known[p]; seen || !a.bordersKnownGround(p) {
 				continue
