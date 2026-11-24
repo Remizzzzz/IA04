@@ -18,8 +18,8 @@ import (
 // TODO: Add an optional random composition with configurable min/max total (useful for the simulation later on)
 // units and min/max counts per type. Validate that these bounds are compatible
 // with each other and the available tiles; keep the fixed scenario available.
-func SimulateArmyWorldWithComposition(sizeOfMap int, obstacleFrequency int) {
-	w := world.NewWorld(sizeOfMap, obstacleFrequency)
+func SimulateArmyWorldWithComposition(cfg world.MapConfig) {
+	w := world.NewWorld(cfg)
 	composition := []agents.UnitType{
 		agents.Tank,
 		agents.Infantry,
@@ -49,8 +49,8 @@ func SimulateArmyWorldWithComposition(sizeOfMap int, obstacleFrequency int) {
 
 // SimulateRandomWorld builds a random world and a set of units, then runs the
 // simulation loop until the user presses Enter.
-func SimulateRandomWorld(sizeOfMap int, numberOfEntity int, obstacleFrequency int) {
-	w := world.NewWorld(sizeOfMap, obstacleFrequency)
+func SimulateRandomWorld(cfg world.MapConfig, numberOfEntity int) {
+	w := world.NewWorld(cfg)
 	for i := 0; i < numberOfEntity; i++ {
 		w.SpawnUnit(agents.Random)
 	}
@@ -74,8 +74,8 @@ func SimulateRandomWorld(sizeOfMap int, numberOfEntity int, obstacleFrequency in
 // soldiersPerArmy Coordinated units each (one per army becomes its general),
 // then runs the simulation loop until the user presses Enter - handy for
 // watching the regroup-then-advance army strategy play out.
-func SimulateArmyWorld(sizeOfMap int, numberOfArmies int, soldiersPerArmy int, obstacleFrequency int) {
-	w := world.NewWorld(sizeOfMap, obstacleFrequency)
+func SimulateArmyWorld(numberOfArmies int, soldiersPerArmy int, cfg world.MapConfig) {
+	w := world.NewWorld(cfg)
 	for allegiance := 1; allegiance <= numberOfArmies; allegiance++ {
 		for i := 0; i < soldiersPerArmy; i++ {
 			w.SpawnAllied(agents.Coordinated, allegiance, agents.Infantry)

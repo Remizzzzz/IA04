@@ -46,27 +46,17 @@ type World struct {
 	FreeTiles []geometry.Pos  // tiles that were free at world creation time (used to spawn units)
 	Units     []*agents.Unit  // every unit currently in the world
 	Armies    []*agents.Army  // every army formed so far, one per distinct allegiance seen
+	MapCfg    MapConfig
 }
 
-// NewWorld creates an N x N grid where each tile is randomly an obstacle with
-// probabilitY% chance, and free otherwise.
-func NewWorld(N int, probabilitY int) *World {
-	grid := make([][]Tile, N)
-	FreePos := make([]geometry.Pos, 0)
-	for y := range grid { // y = row
-		grid[y] = make([]Tile, N)
-		for x := range grid[y] { // x = column
-			grid[y][x] = RandCase(probabilitY)
-			if grid[y][x] == free {
-				FreePos = append(FreePos, geometry.Pos{X: x, Y: y})
-			}
-		}
-	}
+// NewWorld creates the world, with a map determined by its MapConfig
+func NewWorld(cfg MapConfig) *World {
+	grid, FreePos := NewMapFromConfig(cfg)
 	print := make(map[Tile]string)
 	print[free] = "[ ]"
 	print[occupied] = "[X]"
 	print[obstacle] = "[O]"
-	return &World{Grid: grid, Size: N, Printable: print, FreeTiles: FreePos}
+	return &World{Grid: grid, Size: cfg.Size, Printable: print, FreeTiles: FreePos, MapCfg: cfg}
 }
 
 // SetTile sets the tile value at pos.
