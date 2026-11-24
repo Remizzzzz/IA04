@@ -12,7 +12,6 @@ import (
 // TODO: Display live counts per army and unit type. The initial-composition
 // label below stays unchanged after casualties; it is not a survivor count.
 // TODO: Use distinct symbols for Tank, Infantry and Sniper, keeping team colors.
-// TODO: Detect victory when only one army has surviving units.
 // TODO: Separate army creation, display and the simulation loop; consider a
 // stop channel to terminate the loop cleanly when returning from this function.
 // TODO: Add an optional random composition with configurable min/max total (useful for the simulation later on)
@@ -33,18 +32,48 @@ func SimulateArmyWorldWithComposition(sizeOfMap int, obstacleFrequency int) {
 		}
 	}
 
+	done := make(chan world.Result)
 	go func() {
 		for {
 			fmt.Print("\033[H\033[2J")
 			w.PrintWorld()
 			fmt.Println("Initial composition per army: 1 Tank, 2 Infantry, 1 Sniper.")
+			fmt.Printf("Tour %d / %d\n", w.TurnCount, world.MaxTurns)
 			fmt.Println("Press Enter to end simulation.")
 			w.Turn()
+			if result := w.CheckResult(); result.Finished {
+				w.Stop()
+				done <- result
+				return
+			}
 			time.Sleep(time.Second)
 		}
 	}()
 
-	fmt.Scanln()
+	// quit permet toujours d'arrêter la simulation avec Entrée.
+	quit := make(chan struct{})
+	go func() {
+		fmt.Scanln()
+		close(quit)
+	}()
+
+	select {
+	case result := <-done:
+		fmt.Print("\033[H\033[2J")
+		w.PrintWorld()
+		printResult(result, w.TurnCount)
+	case <-quit:
+		fmt.Println("Simulation interrompue.")
+	}
+}
+
+func printResult(result world.Result, turns int) {
+	if result.Winner != nil {
+		fmt.Printf("L'armée %d gagne (%s) en %d tours, avec %d unité(s) survivante(s) !\n",
+			result.Winner.Allegiance, result.Description, turns, len(result.Winner.Soldiers))
+	} else {
+		fmt.Printf("Fin de partie après %d tours : %s\n", turns, result.Description)
+	}
 }
 
 // SimulateRandomWorld builds a random world and a set of units, then runs the

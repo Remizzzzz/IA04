@@ -46,6 +46,7 @@ type World struct {
 	FreeTiles []geometry.Pos  // tiles that were free at world creation time (used to spawn units)
 	Units     []*agents.Unit  // every unit currently in the world
 	Armies    []*agents.Army  // every army formed so far, one per distinct allegiance seen
+	TurnCount int             // nombre de tours joués depuis le début de la partie
 }
 
 // NewWorld creates an N x N grid where each tile is randomly an obstacle with
@@ -566,6 +567,7 @@ func (w *World) ResolveDamage(target *agents.Unit, damage int) {
 // final two sequential loops keep every Grid mutation serialized in World,
 // avoiding data races on the shared grid.
 func (w *World) Turn() {
+	w.TurnCount++
 	for _, army := range w.Armies {
 		army.BeginTurn()
 		army.UpdatePhase()
