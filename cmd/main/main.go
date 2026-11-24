@@ -9,5 +9,10 @@ func main() {
 	numberOfArmies := 2     // number of armies to spawn
 	soldiersPerArmy := 3    // number of soldiers (including the general) per army
 	obstacleFrequency := 30 // percentage chance for a tile to be an obstacle
-	sim.SimulateArmyWorld(sizeOfMap, numberOfArmies, soldiersPerArmy, obstacleFrequency)
+	random := true
+	if random {
+		sim.SimulateRandomWorld(sizeOfMap, 8, obstacleFrequency)
+	} else {
+		sim.SimulateArmyWorld(sizeOfMap, numberOfArmies, soldiersPerArmy, obstacleFrequency)
+	}
 }
