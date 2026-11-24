@@ -2,6 +2,7 @@ package utils
 
 import (
 	"math/rand"
+	"slices"
 	"time"
 )
 
@@ -30,4 +31,15 @@ func Contains[T comparable](tab []T, element T) bool {
 		}
 	}
 	return false
+}
+
+// Util I made to delete an element in a slice dynamically
+// Cannot be use in a loop for _,i :=range slice, as the
+// slice will not be updated dynamically in the loop
+func DeleteFromSlice[T any](slice *[]*T, element *T) {
+	idx := slices.Index(*slice, element)
+	if idx == -1 {
+		return
+	}
+	*slice = slices.Delete(*slice, idx, idx+1)
 }

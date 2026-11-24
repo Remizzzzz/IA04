@@ -3,7 +3,6 @@ package world
 import (
 	"container/heap"
 	"fmt"
-	"slices"
 	"soldier/cmd/agents"
 	"soldier/cmd/geometry"
 	"soldier/cmd/utils"
@@ -545,19 +544,12 @@ func (w *World) ResolveDamage(target *agents.Unit, damage int) {
 	target.LifePoints -= damage
 	if target.LifePoints <= 0 {
 		//remove the reference to the unit in the world
-		idx := slices.Index(w.Units, target)
-		w.Units = slices.Delete(w.Units, idx, idx+1)
+		utils.DeleteFromSlice(&w.Units, target)
 		w.SetTile(target.Position, free)
 		//Remove the unit from it's army and close its channel
 		target.Alive = false
-		target.Army.NotifyDeath(target)
 		close(target.Orders)
 		close(target.Actions)
-		//Remove army if it no longer have soldiers
-		if len(target.Army.Soldiers) == 0 {
-			idx := slices.Index(w.Armies, target.Army)
-			w.Armies = slices.Delete(w.Armies, idx, idx+1)
-		}
 	}
 }
 
@@ -627,5 +619,17 @@ func (w *World) Turn() {
 		if a.First.Alive { //If the unit's still alive after the shooting phase, it can move
 			w.Move(a.First, a.Second)
 		}
+	}
+
+	deadArmies := make([]*agents.Army, 0)
+	for _, a := range w.Armies {
+		a.UpdateUnitDeathStatus()
+		//Remove army if it no longer have soldiers
+		if len(a.Soldiers) == 0 {
+			deadArmies = append(deadArmies, a)
+		}
+	}
+	for _, a := range deadArmies {
+		utils.DeleteFromSlice(&w.Armies, a)
 	}
 }

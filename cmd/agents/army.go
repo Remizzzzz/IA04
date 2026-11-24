@@ -2,7 +2,6 @@ package agents
 
 import (
 	"math"
-	"slices"
 	"soldier/cmd/geometry"
 	"soldier/cmd/utils"
 )
@@ -107,17 +106,42 @@ func (a *Army) BeginTurn() {
 	a.targetInSight = false
 }
 
-// NotifyDeath is called by world in ResolveDamage if the target unit dies. The army then remove
-// the unit from its Soldiers list
-func (a *Army) NotifyDeath(unit *Unit) {
-	idx := slices.Index(a.Soldiers, unit)
-	a.Soldiers = slices.Delete(a.Soldiers, idx, idx+1)
-	if unit == a.General {
+// UpdateUnitDeathStatus update the inner list of the army, to remove
+// dead units from allied list and enemies seen list
+func (a *Army) UpdateUnitDeathStatus() {
+	//update allied death status
+	alliedDeath := make([]*Unit, 0)
+	for _, u := range a.Soldiers {
+		if !u.Alive {
+			alliedDeath = append(alliedDeath, u)
+		}
+	}
+	for _, u := range alliedDeath {
+		utils.DeleteFromSlice(&a.Soldiers, u)
+	}
+	//If general is dead, take a new general
+	if !a.General.Alive {
 		if len(a.Soldiers) > 0 {
 			a.General = a.Soldiers[0]
 		} else {
 			a.General = nil
 		}
+	}
+
+	//update enemiesDeathStatus
+	enemiesDeath := make([]*Unit, 0)
+	for _, u := range a.Enemies {
+		if !u.Alive {
+			enemiesDeath = append(enemiesDeath, u)
+		}
+	}
+	for _, u := range enemiesDeath {
+		utils.DeleteFromSlice(&a.Enemies, u)
+	}
+
+	//If target is dead, put it to nil
+	if a.Target != nil && !a.Target.Alive {
+		a.Target = nil
 	}
 }
 
@@ -172,12 +196,15 @@ func (a *Army) Perceive(targets []*Unit) {
 		if t.Allegiance == a.Allegiance {
 			continue
 		}
-		if len(a.Enemies) == 0 { //Default target is first enemy encountered
-			a.Target = t
-			a.Enemies = append(a.Enemies, t)
-		}
 		if !utils.Contains(a.Enemies, t) {
 			a.Enemies = append(a.Enemies, t)
+			//If the new enemy is closer to general, it becomes the new target
+			if nearestEnemy(a.General, a.Enemies) == t {
+				a.Target = t
+			}
+		}
+		if a.Target == nil { //If the target is dead, for example the first enemy seen is the default target
+			a.Target = t
 		}
 		if t == a.Target {
 			a.targetInSight = true
