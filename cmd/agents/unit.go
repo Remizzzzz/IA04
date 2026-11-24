@@ -131,6 +131,7 @@ func NewUnit(strategy Strategy, allegiance int, unitType UnitType) *Unit {
 		shootingDamage = 0
 	}
 	return &Unit{
+		UnitType:       unitType,
 		Speed:          speed,
 		Strategy:       strategy,
 		VisionRange:    visionRange,
