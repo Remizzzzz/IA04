@@ -277,6 +277,10 @@ func (a *Army) bordersKnownGround(p geometry.Pos) bool {
 // ground while the army has no target. Deliberately simple for now - it
 // will grow once units carry types with their own behaviors.
 func (a *Army) defaultStrategy(u *Unit, reachable []geometry.Pos, targets []*Unit, distance DistanceFunc) Action {
+	if shot, ok := a.shootAction(u, targets); ok {
+		return shot
+	}
+
 	if enemy := nearestEnemy(u, targets); enemy != nil && a.Phase == Regrouping {
 		return moveAwayFrom(u, reachable, enemy.Position, distance)
 	}
@@ -303,6 +307,32 @@ func (a *Army) Decide(u *Unit, reachable []geometry.Pos, targets []*Unit, distan
 	default:
 		return a.defaultStrategy(u, reachable, targets, distance)
 	}
+}
+
+// shootAction orders u to shoot the army's Target when it is visible and in
+// shooting range (focus fire). Falls back to any visible enemy in range so a
+// unit never stands idle while being shot at.
+func (a *Army) shootAction(u *Unit, targets []*Unit) (Action, bool) {
+	if u.ShootingRange <= 0 || u.ShootingDamage <= 0 {
+		return Action{}, false
+	}
+	var fallback *Unit
+	for _, t := range targets {
+		if t.Allegiance == u.Allegiance || !t.Alive ||
+			geometry.EuclidianDistance(u.Position, t.Position) > u.ShootingRange {
+			continue
+		}
+		if t == a.Target {
+			return Action{Kind: Shoot, Target: t.Position}, true
+		}
+		if fallback == nil {
+			fallback = t
+		}
+	}
+	if fallback != nil {
+		return Action{Kind: Shoot, Target: fallback.Position}, true
+	}
+	return Action{}, false
 }
 
 // Made by Claude :
