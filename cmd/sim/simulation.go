@@ -8,7 +8,9 @@ import (
 )
 
 // SimulateArmyWorldWithComposition creates two armies with a fixed composition.
-// Each army has one tank (the general), two infantry and one sniper.
+// Each army has one tank (the general), two infantry and one sniper. Armies
+// spawn grouped around their general and mirrored by the map's symmetry (see
+// World.SpawnArmies), so a symmetric cfg gives both sides the same start.
 // TODO: Display live counts per army and unit type. The initial-composition
 // label below stays unchanged after casualties; it is not a survivor count.
 // TODO: Use distinct symbols for Tank, Infantry and Sniper, keeping team colors.
@@ -18,8 +20,8 @@ import (
 // TODO: Add an optional random composition with configurable min/max total (useful for the simulation later on)
 // units and min/max counts per type. Validate that these bounds are compatible
 // with each other and the available tiles; keep the fixed scenario available.
-func SimulateArmyWorldWithComposition(sizeOfMap int, obstacleFrequency int) {
-	w := world.NewWorld(sizeOfMap, obstacleFrequency)
+func SimulateArmyWorldWithComposition(cfg world.MapConfig) {
+	w := world.NewWorld(cfg)
 	composition := []agents.UnitType{
 		agents.Tank,
 		agents.Infantry,
@@ -27,11 +29,7 @@ func SimulateArmyWorldWithComposition(sizeOfMap int, obstacleFrequency int) {
 		agents.Sniper,
 	}
 
-	for allegiance := 1; allegiance <= 2; allegiance++ {
-		for _, unitType := range composition {
-			w.SpawnAllied(agents.Random, allegiance, unitType)
-		}
-	}
+	w.SpawnArmies(2, composition, agents.Coordinated) // composition[0] (the tank) is each army's general
 
 	go func() {
 		for {
@@ -49,10 +47,10 @@ func SimulateArmyWorldWithComposition(sizeOfMap int, obstacleFrequency int) {
 
 // SimulateRandomWorld builds a random world and a set of units, then runs the
 // simulation loop until the user presses Enter.
-func SimulateRandomWorld(sizeOfMap int, numberOfEntity int, obstacleFrequency int) {
-	w := world.NewWorld(sizeOfMap, obstacleFrequency)
+func SimulateRandomWorld(cfg world.MapConfig, numberOfEntity int) {
+	w := world.NewWorld(cfg)
 	for i := 0; i < numberOfEntity; i++ {
-		w.SpawnUnit(agents.Random)
+		w.SpawnUnitRandom(agents.Random)
 	}
 
 	// Run the simulation loop in the background so the main goroutine can
@@ -70,17 +68,18 @@ func SimulateRandomWorld(sizeOfMap int, numberOfEntity int, obstacleFrequency in
 	fmt.Scanln() // block until the user presses Enter, ending the program
 }
 
-// SimulateArmyWorld builds a random world with numberOfArmies armies of
-// soldiersPerArmy Coordinated units each (one per army becomes its general),
-// then runs the simulation loop until the user presses Enter - handy for
-// watching the regroup-then-advance army strategy play out.
-func SimulateArmyWorld(sizeOfMap int, numberOfArmies int, soldiersPerArmy int, obstacleFrequency int) {
-	w := world.NewWorld(sizeOfMap, obstacleFrequency)
-	for allegiance := 1; allegiance <= numberOfArmies; allegiance++ {
-		for i := 0; i < soldiersPerArmy; i++ {
-			w.SpawnAllied(agents.Coordinated, allegiance, agents.Infantry)
-		}
+// SimulateArmyWorld builds a world from cfg with numberOfArmies armies of
+// soldiersPerArmy Coordinated infantry each (the first one of each army is its
+// general), spawned grouped and mirrored by the map's symmetry (see
+// World.SpawnArmies), then runs the simulation loop until the user presses
+// Enter - handy for watching the army strategy play out.
+func SimulateArmyWorld(numberOfArmies int, soldiersPerArmy int, cfg world.MapConfig) {
+	w := world.NewWorld(cfg)
+	composition := make([]agents.UnitType, soldiersPerArmy)
+	for i := range composition {
+		composition[i] = agents.Infantry
 	}
+	w.SpawnArmies(numberOfArmies, composition, agents.Coordinated)
 
 	go func() {
 		for {

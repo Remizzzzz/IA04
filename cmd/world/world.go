@@ -40,43 +40,32 @@ func RandCase(probabilitY int) Tile {
 // Turn), which is what lets World hold *agents.Unit references without
 // agents importing world back.
 type World struct {
-	Grid      [][]Tile
-	Size      int
+	Grid      [][]Tile // indexed Grid[y][x]: row first, then column (see geometry.Pos)
 	Printable map[Tile]string // text representation of each Tile, used by PrintWorld
 	FreeTiles []geometry.Pos  // tiles that were free at world creation time (used to spawn units)
 	Units     []*agents.Unit  // every unit currently in the world
 	Armies    []*agents.Army  // every army formed so far, one per distinct allegiance seen
+	MapCfg    MapConfig
 }
 
-// NewWorld creates an N x N grid where each tile is randomly an obstacle with
-// probabilitY% chance, and free otherwise.
-func NewWorld(N int, probabilitY int) *World {
-	grid := make([][]Tile, N)
-	FreePos := make([]geometry.Pos, 0)
-	for i := range grid {
-		grid[i] = make([]Tile, N)
-		for j := range grid[i] {
-			grid[i][j] = RandCase(probabilitY)
-			if grid[i][j] == free {
-				FreePos = append(FreePos, geometry.Pos{X: i, Y: j})
-			}
-		}
-	}
+// NewWorld creates the world, with a map determined by its MapConfig
+func NewWorld(cfg MapConfig) *World {
+	grid, FreePos := NewMapFromConfig(cfg)
 	print := make(map[Tile]string)
 	print[free] = "[ ]"
 	print[occupied] = "[X]"
 	print[obstacle] = "[O]"
-	return &World{Grid: grid, Size: N, Printable: print, FreeTiles: FreePos}
+	return &World{Grid: grid, Printable: print, FreeTiles: FreePos, MapCfg: cfg}
 }
 
 // SetTile sets the tile value at pos.
 func (w *World) SetTile(pos geometry.Pos, c Tile) {
-	w.Grid[pos.X][pos.Y] = c
+	w.Grid[pos.Y][pos.X] = c
 }
 
 // GetTile returns the tile value at pos.
 func (w *World) GetTile(pos geometry.Pos) Tile {
-	return w.Grid[pos.X][pos.Y]
+	return w.Grid[pos.Y][pos.X]
 }
 
 // GetUnitAt returns the unit occupying pos, or nil if there isn't one. This
@@ -103,9 +92,9 @@ const colorReset = "\033[0m"
 // PrintWorld renders the grid to stdout using the Printable representation,
 // coloring each occupied tile by the army of the unit standing on it.
 func (w *World) PrintWorld() {
-	for i := range w.Grid {
-		for j := range w.Grid[i] {
-			pos := geometry.Pos{X: i, Y: j}
+	for y := range w.Grid { // one printed line per row
+		for x := range w.Grid[y] {
+			pos := geometry.Pos{X: x, Y: y}
 			tile := w.GetTile(pos)
 			toPrint := w.Printable[tile]
 			if tile == occupied {
@@ -142,7 +131,7 @@ func (w *World) GetNeighbours(pos geometry.Pos) []geometry.Pos {
 			}
 			nextX := pos.X + dX
 			nextY := pos.Y + dY
-			if nextX < 0 || nextX >= w.Size || nextY < 0 || nextY >= w.Size {
+			if nextX < 0 || nextX >= w.MapCfg.Size || nextY < 0 || nextY >= w.MapCfg.Size {
 				continue
 			}
 			neighbours = append(neighbours, geometry.Pos{X: nextX, Y: nextY})
@@ -154,7 +143,7 @@ func (w *World) GetNeighbours(pos geometry.Pos) []geometry.Pos {
 // GetRandomPos returns a uniformly random position within the grid bounds
 // (may or may not be free).
 func (w *World) GetRandomPos() geometry.Pos {
-	return geometry.Pos{X: utils.RandInt(0, w.Size), Y: utils.RandInt(0, w.Size)}
+	return geometry.Pos{X: utils.RandInt(0, w.MapCfg.Size), Y: utils.RandInt(0, w.MapCfg.Size)}
 }
 
 // GetRandomFreePos returns a random position that is still free.
@@ -172,46 +161,6 @@ func (w *World) GetRandomFreePos() geometry.Pos {
 		panic("cannot spawn unit: no free tile remains")
 	}
 	return available[utils.RandInt(0, len(available))]
-}
-
-// SpawnUnit creates a solo unit with the given strategy, places it on a
-// random free tile, registers it with the world and starts its goroutine.
-func (w *World) SpawnUnit(strategy agents.Strategy) *agents.Unit {
-	return w.spawn(agents.NewUnitDefault(strategy), w.GetRandomFreePos())
-}
-
-// SpawnUnitAt is like SpawnUnit but places the unit at a specific tile,
-// panicking if that tile isn't free.
-func (w *World) SpawnUnitAt(strategy agents.Strategy, p geometry.Pos) *agents.Unit {
-	if !w.IsFree(p) {
-		panic(fmt.Sprintf("cannot spawn unit at position (%d, %d): tile is not free", p.X, p.Y))
-	}
-	return w.spawn(agents.NewUnitDefault(strategy), p)
-}
-
-// SpawnAllied creates a unit with the given strategy and allegiance, places
-// it on a random free tile, and enlists it into the Army for that
-// allegiance (forming one if this is the first unit to carry it).
-func (w *World) SpawnAllied(strategy agents.Strategy, allegiance int, unitType agents.UnitType) *agents.Unit {
-	return w.spawn(agents.NewUnit(strategy, allegiance, unitType), w.GetRandomFreePos())
-}
-
-// SpawnAlliedAt is like SpawnAllied but places the unit at a specific tile,
-// panicking if that tile isn't free.
-func (w *World) SpawnAlliedAt(strategy agents.Strategy, allegiance int, p geometry.Pos, unitType agents.UnitType) *agents.Unit {
-	if !w.IsFree(p) {
-		panic(fmt.Sprintf("cannot spawn unit at position (%d, %d): tile is not free", p.X, p.Y))
-	}
-	return w.spawn(agents.NewUnit(strategy, allegiance, unitType), p)
-}
-
-func (w *World) spawn(u *agents.Unit, p geometry.Pos) *agents.Unit {
-	u.Position = p
-	w.SetTile(p, occupied)
-	w.Units = append(w.Units, u)
-	w.enlist(u)
-	u.Simulate()
-	return u
 }
 
 // enlist finds the Army matching u's allegiance, or forms a new one with u
@@ -234,7 +183,7 @@ func (w *World) enlist(u *agents.Unit) {
 
 // OutOfRange reports whether p falls outside the grid bounds.
 func (w *World) OutOfRange(p geometry.Pos) bool {
-	return p.X < 0 || p.X >= w.Size || p.Y < 0 || p.Y >= w.Size
+	return p.X < 0 || p.X >= w.MapCfg.Size || p.Y < 0 || p.Y >= w.MapCfg.Size
 }
 
 // IsFree reports whether p is within bounds and not occupied/an obstacle.
@@ -274,9 +223,9 @@ func (w *World) GetReachableTiles(pos geometry.Pos, speed int, visible []geometr
 	passable := func(p geometry.Pos) bool { return visibleSet[p] && w.IsFree(p) }
 
 	reachableTiles := make([]geometry.Pos, 0)
-	for i := pos.X - speed; i <= pos.X+speed; i++ {
-		for j := pos.Y - speed; j <= pos.Y+speed; j++ {
-			candidate := geometry.Pos{X: i, Y: j}
+	for y := pos.Y - speed; y <= pos.Y+speed; y++ {
+		for x := pos.X - speed; x <= pos.X+speed; x++ {
+			candidate := geometry.Pos{X: x, Y: y}
 			if w.reachable(pos, candidate, speed, passable) {
 				reachableTiles = append(reachableTiles, candidate)
 			}
@@ -287,8 +236,9 @@ func (w *World) GetReachableTiles(pos geometry.Pos, speed int, visible []geometr
 
 // Made by Claude:
 // reachable reports whether target can be reached from pos within speed
-// steps, using a breadth-first search through tiles accepted by passable
-// and moving one step at a time along the four cardinal directions.
+// steps, using a breadth-first search (see geometry.BFS) through tiles
+// accepted by passable and moving one step at a time along the four cardinal
+// directions.
 func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int, passable func(geometry.Pos) bool) bool {
 	if target == pos {
 		return true
@@ -297,35 +247,20 @@ func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int, pass
 		return false
 	}
 
-	type node struct {
-		pos  geometry.Pos
-		step int
-	}
-	queue := []node{{pos: pos}}
-	visited := map[geometry.Pos]bool{pos: true}
-	directions := [...]geometry.Pos{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}} // up/down/left/right
-
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		if current.step >= speed {
-			continue // reached the speed limit along this path, don't expand further
+	steps := map[geometry.Pos]int{pos: 0} // steps[p]: number of steps from pos to p
+	found := false
+	geometry.BFS(w.MapCfg.Size, []geometry.Pos{pos}, passable, func(p, from geometry.Pos) bool {
+		steps[p] = steps[from] + 1
+		if steps[p] > speed {
+			return false // BFS visits closest first: every tile left is out of reach too
 		}
-
-		for _, direction := range directions {
-			next := geometry.Pos{X: current.pos.X + direction.X, Y: current.pos.Y + direction.Y}
-			if visited[next] || w.OutOfRange(next) || !passable(next) {
-				continue
-			}
-			if next == target {
-				return true
-			}
-			visited[next] = true
-			queue = append(queue, node{pos: next, step: current.step + 1})
+		if p == target {
+			found = true
+			return false
 		}
-	}
-
-	return false
+		return true
+	})
+	return found
 }
 
 // region pathfinding
@@ -418,7 +353,7 @@ func (w *World) knownPathLength(from, to geometry.Pos, known agents.KnownMap, bl
 	if bestFrontier < 0 {
 		return -1
 	}
-	return w.Size*w.Size + bestFrontier
+	return w.MapCfg.Size*w.MapCfg.Size + bestFrontier
 }
 
 // observe updates u's terrain memory (and its army's, if it coordinates)
@@ -452,9 +387,9 @@ func (w *World) distanceFor(u *agents.Unit, vision []geometry.Pos) agents.Distan
 // a shorter one.
 func (w *World) GetVisibleTiles(pos geometry.Pos, visionRange int) []geometry.Pos {
 	visible := make([]geometry.Pos, 0)
-	for i := pos.X - visionRange; i <= pos.X+visionRange; i++ {
-		for j := pos.Y - visionRange; j <= pos.Y+visionRange; j++ {
-			target := geometry.Pos{X: i, Y: j}
+	for y := pos.Y - visionRange; y <= pos.Y+visionRange; y++ {
+		for x := pos.X - visionRange; x <= pos.X+visionRange; x++ {
+			target := geometry.Pos{X: x, Y: y}
 			if w.OutOfRange(target) {
 				continue
 			}
@@ -591,7 +526,7 @@ func (w *World) Turn() {
 		}
 	}
 	for _, army := range w.Armies {
-		army.ResolveGoal(w.Size)
+		army.ResolveGoal(w.MapCfg.Size)
 	}
 
 	for _, u := range w.Units {
