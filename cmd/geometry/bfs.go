@@ -2,20 +2,33 @@ package geometry
 
 // Made by Claude :
 // BFS runs a breadth-first search on a size x size grid, moving one step at a
-// time along the four cardinal directions (the same moves units make).
+// time along the four cardinal directions (the same moves units make). Tiles
+// are visited closest first (in number of steps from the nearest start), like
+// a flood fill spreading outward ring by ring, and never twice.
 //
-// It starts from every tile of starts at once, then visits the tiles next to
-// them, then the tiles next to those, and so on, like a flood fill spreading
-// outward ring by ring - so tiles are always visited closest first (in number
-// of steps from the nearest start). It only steps onto in-bounds tiles that
-// passable accepts, and never visits a tile twice.
+// Parameters:
+//   - size: side of the grid; the search never steps outside of it.
+//   - starts: the tiles the search starts from (one or several). They are
+//     neither checked by passable nor passed to visit: they are where the
+//     search stands, not where it goes (e.g. a unit's own, occupied tile).
+//   - passable: "may the search step onto this tile?" - called on every
+//     in-bounds neighbour not visited yet; tiles it rejects are skipped.
+//   - visit: "what to do with this newly reached tile, and should the search
+//     go on?" - called once per tile p that passable accepted, with from the
+//     tile it was reached from (one step closer to the starts; following from
+//     back gives a shortest path). Return true to keep searching, false to
+//     stop the whole search right away.
 //
-// visit is called once for every newly reached tile p, with from the tile it
-// was reached from (one step closer to the starts): following from back
-// gives a shortest path to the starts. The search stops as soon as visit
-// returns false. Starts are not passed to visit, nor checked by passable:
-// they are where the search stands, not where it goes (e.g. a unit's own,
-// occupied tile).
+// BFS returns nothing: visit is where callers record what they need, in
+// variables declared around the call (e.g. appending p to a slice).
+//
+// Example - the count tiles closest to start, walking only on free tiles:
+//
+//	tiles := []Pos{start}
+//	BFS(size, []Pos{start}, isFree, func(p, _ Pos) bool {
+//		tiles = append(tiles, p)
+//		return len(tiles) < count
+//	})
 //
 // The grid itself is never touched: everything BFS needs to know about it
 // goes through passable, which is what lets one BFS serve every caller.

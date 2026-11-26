@@ -8,7 +8,9 @@ import (
 )
 
 // SimulateArmyWorldWithComposition creates two armies with a fixed composition.
-// Each army has one tank (the general), two infantry and one sniper.
+// Each army has one tank (the general), two infantry and one sniper. Armies
+// spawn grouped around their general and mirrored by the map's symmetry (see
+// World.SpawnArmies), so a symmetric cfg gives both sides the same start.
 // TODO: Display live counts per army and unit type. The initial-composition
 // label below stays unchanged after casualties; it is not a survivor count.
 // TODO: Use distinct symbols for Tank, Infantry and Sniper, keeping team colors.
@@ -27,11 +29,7 @@ func SimulateArmyWorldWithComposition(cfg world.MapConfig) {
 		agents.Sniper,
 	}
 
-	for allegiance := 1; allegiance <= 2; allegiance++ {
-		for _, unitType := range composition {
-			w.SpawnAlliedRandom(agents.Random, allegiance, unitType)
-		}
-	}
+	w.SpawnArmies(2, composition, agents.Coordinated) // composition[0] (the tank) is each army's general
 
 	go func() {
 		for {
@@ -70,17 +68,18 @@ func SimulateRandomWorld(cfg world.MapConfig, numberOfEntity int) {
 	fmt.Scanln() // block until the user presses Enter, ending the program
 }
 
-// SimulateArmyWorld builds a random world with numberOfArmies armies of
-// soldiersPerArmy Coordinated units each (one per army becomes its general),
-// then runs the simulation loop until the user presses Enter - handy for
-// watching the regroup-then-advance army strategy play out.
+// SimulateArmyWorld builds a world from cfg with numberOfArmies armies of
+// soldiersPerArmy Coordinated infantry each (the first one of each army is its
+// general), spawned grouped and mirrored by the map's symmetry (see
+// World.SpawnArmies), then runs the simulation loop until the user presses
+// Enter - handy for watching the army strategy play out.
 func SimulateArmyWorld(numberOfArmies int, soldiersPerArmy int, cfg world.MapConfig) {
 	w := world.NewWorld(cfg)
-	for allegiance := 1; allegiance <= numberOfArmies; allegiance++ {
-		for i := 0; i < soldiersPerArmy; i++ {
-			w.SpawnAlliedRandom(agents.Coordinated, allegiance, agents.Infantry)
-		}
+	composition := make([]agents.UnitType, soldiersPerArmy)
+	for i := range composition {
+		composition[i] = agents.Infantry
 	}
+	w.SpawnArmies(numberOfArmies, composition, agents.Coordinated)
 
 	go func() {
 		for {

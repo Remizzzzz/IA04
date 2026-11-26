@@ -41,7 +41,6 @@ func RandCase(probabilitY int) Tile {
 // agents importing world back.
 type World struct {
 	Grid      [][]Tile // indexed Grid[y][x]: row first, then column (see geometry.Pos)
-	Size      int
 	Printable map[Tile]string // text representation of each Tile, used by PrintWorld
 	FreeTiles []geometry.Pos  // tiles that were free at world creation time (used to spawn units)
 	Units     []*agents.Unit  // every unit currently in the world
@@ -56,7 +55,7 @@ func NewWorld(cfg MapConfig) *World {
 	print[free] = "[ ]"
 	print[occupied] = "[X]"
 	print[obstacle] = "[O]"
-	return &World{Grid: grid, Size: cfg.Size, Printable: print, FreeTiles: FreePos, MapCfg: cfg}
+	return &World{Grid: grid, Printable: print, FreeTiles: FreePos, MapCfg: cfg}
 }
 
 // SetTile sets the tile value at pos.
@@ -132,7 +131,7 @@ func (w *World) GetNeighbours(pos geometry.Pos) []geometry.Pos {
 			}
 			nextX := pos.X + dX
 			nextY := pos.Y + dY
-			if nextX < 0 || nextX >= w.Size || nextY < 0 || nextY >= w.Size {
+			if nextX < 0 || nextX >= w.MapCfg.Size || nextY < 0 || nextY >= w.MapCfg.Size {
 				continue
 			}
 			neighbours = append(neighbours, geometry.Pos{X: nextX, Y: nextY})
@@ -144,7 +143,7 @@ func (w *World) GetNeighbours(pos geometry.Pos) []geometry.Pos {
 // GetRandomPos returns a uniformly random position within the grid bounds
 // (may or may not be free).
 func (w *World) GetRandomPos() geometry.Pos {
-	return geometry.Pos{X: utils.RandInt(0, w.Size), Y: utils.RandInt(0, w.Size)}
+	return geometry.Pos{X: utils.RandInt(0, w.MapCfg.Size), Y: utils.RandInt(0, w.MapCfg.Size)}
 }
 
 // GetRandomFreePos returns a random position that is still free.
@@ -184,7 +183,7 @@ func (w *World) enlist(u *agents.Unit) {
 
 // OutOfRange reports whether p falls outside the grid bounds.
 func (w *World) OutOfRange(p geometry.Pos) bool {
-	return p.X < 0 || p.X >= w.Size || p.Y < 0 || p.Y >= w.Size
+	return p.X < 0 || p.X >= w.MapCfg.Size || p.Y < 0 || p.Y >= w.MapCfg.Size
 }
 
 // IsFree reports whether p is within bounds and not occupied/an obstacle.
@@ -250,7 +249,7 @@ func (w *World) reachable(pos geometry.Pos, target geometry.Pos, speed int, pass
 
 	steps := map[geometry.Pos]int{pos: 0} // steps[p]: number of steps from pos to p
 	found := false
-	geometry.BFS(w.Size, []geometry.Pos{pos}, passable, func(p, from geometry.Pos) bool {
+	geometry.BFS(w.MapCfg.Size, []geometry.Pos{pos}, passable, func(p, from geometry.Pos) bool {
 		steps[p] = steps[from] + 1
 		if steps[p] > speed {
 			return false // BFS visits closest first: every tile left is out of reach too
@@ -354,7 +353,7 @@ func (w *World) knownPathLength(from, to geometry.Pos, known agents.KnownMap, bl
 	if bestFrontier < 0 {
 		return -1
 	}
-	return w.Size*w.Size + bestFrontier
+	return w.MapCfg.Size*w.MapCfg.Size + bestFrontier
 }
 
 // observe updates u's terrain memory (and its army's, if it coordinates)
@@ -527,7 +526,7 @@ func (w *World) Turn() {
 		}
 	}
 	for _, army := range w.Armies {
-		army.ResolveGoal(w.Size)
+		army.ResolveGoal(w.MapCfg.Size)
 	}
 
 	for _, u := range w.Units {
